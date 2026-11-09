@@ -1,49 +1,34 @@
-"""Finds which way of sending works on ChatGPT (headless Chromium = same engine as Android WebView)."""
+"""Maps where ChatGPT's answer sits in the page now (headless Chromium = Android WebView engine)."""
 import json, time, urllib.parse
 from playwright.sync_api import sync_playwright
 
 prompt = "Hva kan jeg lage til middag? Foreslå 3 middager. Handlelisten min: Pasta, Pesto, Kylling, Ost, Mais. Svar kort på norsk.\nAvslutt med én linje som starter med «HANDLE:»."
 url = "https://chatgpt.com/?" + urllib.parse.urlencode({"q": prompt})
-def note(t, m): print(f"::notice title={t}::{str(m).replace(chr(10),' ')[:1400]}")
+def note(t, m): print(f"::notice title={t}::{str(m).replace(chr(10),' ')[:1800]}")
 
-STATE = """(()=>{const c=document.querySelector('#prompt-textarea')||document.querySelector('textarea');
-const a=[...document.querySelectorAll('[data-message-author-role="assistant"]')].map(e=>e.innerText);
-return {users:document.querySelectorAll('[data-message-author-role="user"]').length, a:a, pending:c?(c.innerText||c.value||'').trim().length:-1,
- busy:!!document.querySelector('[data-testid="stop-button"]'), url:location.href}})()"""
-BUTTONS = """(()=>{const c=document.querySelector('#prompt-textarea');const f=c&&c.closest('form');
-return [...(f||document).querySelectorAll('button')].map(b=>({t:b.getAttribute('data-testid'),id:b.id,a:b.getAttribute('aria-label'),type:b.type,dis:b.disabled||b.getAttribute('aria-disabled'),txt:(b.innerText||'').slice(0,20)}))})()"""
-
-WAYS = {
-  "none (wait for auto-send)": None,
-  "click send-button testid": "(()=>{const b=document.querySelector('[data-testid=\"send-button\"]');if(b){b.click();return 'ok'}return 'missing'})()",
-  "click #composer-submit-button": "(()=>{const b=document.querySelector('#composer-submit-button');if(b){b.click();return 'ok:'+b.getAttribute('aria-label')}return 'missing'})()",
-  "enter key in composer": "(()=>{const e=document.querySelector('#prompt-textarea');e.focus();for(const t of ['keydown','keypress','keyup'])e.dispatchEvent(new KeyboardEvent(t,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));return 'ok'})()",
-  "input event then send button": "(()=>{const e=document.querySelector('#prompt-textarea');e.focus();e.dispatchEvent(new InputEvent('input',{bubbles:true}));const b=document.querySelector('[data-testid=\"send-button\"]')||document.querySelector('#composer-submit-button');if(b){b.click();return 'ok'}return 'missing'})()",
-}
+MAP = """(()=>{
+const out={};
+const copy=[...document.querySelectorAll('button')].find(b=>/Kopier svar|Copy response|Copy/i.test(b.getAttribute('aria-label')||''));
+const chain=[];let e=copy;for(let i=0;e&&i<12;i++,e=e.parentElement){const d={};for(const a of e.attributes){if(a.name.startsWith('data-')||a.name==='role'||a.name==='id')d[a.name]=a.value.slice(0,40)}chain.push(e.tagName+' '+JSON.stringify(d)+' cls='+(e.className||'').toString().slice(0,60)+' len='+(e.innerText||'').length)}
+out.copyChain=chain;
+const ids={};document.querySelectorAll('[data-testid]').forEach(x=>{const k=x.getAttribute('data-testid').replace(/[0-9]+/g,'#');ids[k]=(ids[k]||0)+1});out.testids=ids;
+const attrs={};document.querySelectorAll('*').forEach(x=>{for(const a of x.attributes){if(a.name.startsWith('data-')&&/(message|turn|author|role|conversation)/.test(a.name)){attrs[a.name+'='+a.value.slice(0,25)]=(attrs[a.name+'='+a.value.slice(0,25)]||0)+1}}});out.attrs=attrs;
+out.md=document.querySelectorAll('.markdown').length;out.prose=document.querySelectorAll('.prose').length;out.article=document.querySelectorAll('article').length;
+const m=document.querySelector('.markdown');out.mdText=m?m.innerText.slice(0,300):null;
+const c=document.querySelector('#prompt-textarea')||document.querySelector('textarea')||document.querySelector('[contenteditable="true"]');
+out.composer=c?(c.tagName+'#'+c.id+' '+(c.innerText||c.value||'').length):null;
+out.stop=[...document.querySelectorAll('button')].filter(b=>/stopp|stop/i.test(b.getAttribute('aria-label')||'')).map(b=>b.getAttribute('aria-label')+'|'+b.getAttribute('data-testid'));
+out.body=document.body.innerText.slice(0,700);
+return out})()"""
 
 with sync_playwright() as p:
     br = p.chromium.launch()
-    for name, js in WAYS.items():
-        ctx = br.new_context(**p.devices["Pixel 7"], locale="nb-NO")
-        page = ctx.new_page()
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            time.sleep(6)
-            if name.startswith("click send"): note("buttons", page.evaluate(BUTTONS))
-            st = page.evaluate(STATE)
-            r = None
-            if js:
-                try: r = page.evaluate(js)
-                except Exception as e: r = "navigated: " + str(e)[:80]
-            res = None
-            for _ in range(40):
-                time.sleep(1.5)
-                try: res = page.evaluate(STATE)
-                except Exception: continue
-                if res["a"] and not res["busy"] and len(res["a"][0]) > 40: break
-            ok = bool(res and res["a"] and len(res["a"][0]) > 40)
-            note(("WORKS " if ok else "fails ") + name, {"before": st, "result": r, "after_users": res and res["users"], "pending": res and res["pending"], "url": res and res["url"], "answer": res and (res["a"][0][:300] if res["a"] else "")})
-        except Exception as e:
-            note("error " + name, e)
-        ctx.close()
+    ctx = br.new_context(**p.devices["Pixel 7"], locale="nb-NO")
+    page = ctx.new_page()
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    for t in (4, 12, 30):
+        time.sleep(t - (0 if t == 4 else (4 if t == 12 else 12)))
+        try: note(f"at {t}s", page.evaluate(MAP))
+        except Exception as e: note(f"at {t}s error", e)
+    page.screenshot(path="answer.png", full_page=True)
     br.close()
