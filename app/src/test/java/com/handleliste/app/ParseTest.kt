@@ -251,4 +251,15 @@ RETT: Kyllingtaco | HANDLE: lomper, rømme | BRUKER: kylling, mais
             "-2":{"index":1,"imageinfo":[{"thumburl":"https://up/a.jpg","mime":"image/jpeg"}]}}}}"""
         assertEquals("https://up/a.jpg", Parse.commonsPicture(json))
     }
+
+    @Test fun dishListHasEveryIngredient() {
+        val D = com.handleliste.app.data.Dinner
+        val d = D.dishes("RETT: Tacogryte | HANDLE: rømme | BRUKER: kjøttdeig, tacochips | ALT: kjøttdeig, tacokrydder, tacochips, mais, rømme, revet ost | BILDE: taco casserole").single()
+        val list = listOf("Kjøttdeig", "Taco chips", "Melk")
+        assertEquals(listOf("Kjøttdeig", "Taco chips"), D.usesFromList(d, list))
+        assertEquals(listOf("Kjøttdeig", "Tacokrydder", "Taco chips", "Mais", "Rømme", "Revet ost"), D.ingredientsForList(d, list))
+        // No ALT line: uses (matched or not) + buy.
+        val old = D.dishes("RETT: Taco | HANDLE: lomper | BRUKER: kjøttdeig, salsa").single()
+        assertEquals(listOf("Kjøttdeig", "Salsa", "Lomper"), D.ingredientsForList(old, list))
+    }
 }

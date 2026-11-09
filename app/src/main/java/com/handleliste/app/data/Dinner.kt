@@ -22,7 +22,7 @@ object Dinner {
                 "navn på retten, tid, hvorfor den passer, og en enkel oppskrift med ingredienser og fremgangsmåte for hver.\n")
             b.append("Gi hver rett en kort overskrift med navnet. Avslutt svaret med én linje per rett, nøyaktig slik: " +
                 "«RETT: <navn> | HANDLE: <det jeg må kjøpe, korte varenavn slik de heter i norske butikker, adskilt med komma> | " +
-                "BRUKER: <varer fra handlelisten min som retten bruker> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
+                "BRUKER: <varer fra handlelisten min som retten bruker> | ALT: <alle ingrediensene retten trenger, unntatt salt, pepper, olje og krydder> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
         } else {
             b.append("What can I make for dinner? Suggest 3 dinners, built as much as possible from what I'm buying.\n")
             b.append("My shopping list: ${list.joinToString(", ").ifBlank { "(empty)" }}\n")
@@ -32,7 +32,7 @@ object Dinner {
             b.append("Assume I have salt, pepper, oil, butter and common spices. Keep it short and clear: " +
                 "dish name, time, why it fits, and a simple recipe with ingredients and steps for each.\n")
             b.append("Give each dish a short heading with its name. End the answer with one line per dish, exactly like this: " +
-                "\"DISH: <name> | BUY: <what I must buy, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
+                "\"DISH: <name> | BUY: <what I must buy, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | ALL: <every ingredient the dish needs, except salt, pepper, oil and spices> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
                 "Write \"nothing\" where empty.")
         }
         return b.toString()
@@ -57,7 +57,7 @@ object Dinner {
             b.append("Totalen skal være alt middagen koster: varene fra handlelisten som brukes + det jeg må kjøpe i tillegg.\n")
             b.append("Avslutt svaret med én linje per rett (hovedforslaget og reserven), nøyaktig slik: " +
                 "«RETT: <navn> | HANDLE: <det jeg må kjøpe i tillegg, korte varenavn adskilt med komma> | " +
-                "BRUKER: <varer fra handlelisten min som retten bruker> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
+                "BRUKER: <varer fra handlelisten min som retten bruker> | ALT: <alle ingrediensene retten trenger, unntatt salt, pepper, olje og krydder> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
         } else {
             b.append("Make a dinner for $servings ${if (servings == 1) "person" else "people"} that costs at most $budget NOK in total to buy.\n")
             if (deals.isNotEmpty()) {
@@ -73,7 +73,7 @@ object Dinner {
                 "Use Norwegian 2025–2026 prices where the deals don't cover it. Stay under $budget NOK.\n")
             b.append("The total is everything the dinner costs: the shopping-list items it uses + what I must buy extra.\n")
             b.append("End the answer with one line per dish (the main one and the backup), exactly like this: " +
-                "\"DISH: <name> | BUY: <what I must buy extra, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
+                "\"DISH: <name> | BUY: <what I must buy extra, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | ALL: <every ingredient the dish needs, except salt, pepper, oil and spices> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
                 "Write \"nothing\" where empty.")
         }
         return b.toString()
@@ -108,7 +108,7 @@ object Dinner {
     private val EMPTY = setOf("ingenting", "nothing", "ingen", "none", "-", "")
 
     /** One dish ChatGPT suggested: what to buy for it, and which list items it uses. */
-    data class Dish(val name: String, val buy: List<String>, val uses: List<String>, val imageQuery: String = "")
+    data class Dish(val name: String, val buy: List<String>, val uses: List<String>, val imageQuery: String = "", val all: List<String> = emptyList())
 
     private fun items(s: String) = s.replace("*", "").split(",", ";").map { it.trim().trimEnd('.') }
         .filter { it.lowercase() !in EMPTY && it.length < 40 }
@@ -122,13 +122,31 @@ object Dinner {
             ?.substringAfter(":")?.let { items(it) }.orEmpty()
         val img = parts.drop(1).firstOrNull { p -> p.uppercase().startsWith("BILDE") || p.uppercase().startsWith("IMAGE") }
             ?.substringAfter(":")?.replace("*", "")?.trim().orEmpty()
-        Dish(name, part("HANDLE", "BUY", "KJØP"), part("BRUKER", "USES"), img)
+        Dish(name, part("HANDLE", "BUY", "KJØP"), part("BRUKER", "USES"), img, part("ALT", "ALL", "INGREDIENSER", "INGREDIENTS"))
     }.distinctBy { it.name.lowercase() }.toList()
 
+    /** "Taco chips", "tacochips" and "2 pk Tacochips" are the same thing. */
+    private fun same(a: String, b: String): Boolean {
+        val x = Parse.searchTerm(a).replace(" ", "").replace("-", "")
+        val y = Parse.searchTerm(b).replace(" ", "").replace("-", "")
+        return x.isNotEmpty() && y.isNotEmpty() && (x == y || (x.length >= 4 && y.contains(x)) || (y.length >= 4 && x.contains(y)))
+    }
+
     /** A dish's "BRUKER" items matched back to the names on your list. */
-    fun usesFromList(d: Dish, list: List<String>): List<String> = list.filter { item ->
-        val t = Parse.searchTerm(item)
-        d.uses.any { n -> val l = n.lowercase(); l.contains(t) || t.contains(l) || Parse.searchTerm(l) == t }
+    fun usesFromList(d: Dish, list: List<String>): List<String> = list.filter { item -> d.uses.any { same(it, item) } }
+
+    /**
+     * Everything to put on a new list for the dish: every ingredient (ChatGPT's "ALT"), named the way
+     * your list names it where it's the same thing, plus anything to buy that wasn't in "ALT".
+     * Without an "ALT" line: what it uses from your list (matched or not) + what to buy.
+     */
+    fun ingredientsForList(d: Dish, list: List<String>): List<String> {
+        val base = d.all.ifEmpty { d.uses + d.buy }
+        val named = base.map { ing -> list.firstOrNull { same(it, ing) } ?: ing.replaceFirstChar { it.uppercase() } }
+        val extra = d.buy.filter { b -> named.none { same(it, b) } }.map { it.replaceFirstChar { c -> c.uppercase() } }
+        val out = ArrayList<String>()
+        (named + extra).forEach { n -> if (out.none { same(it, n) }) out += n }
+        return out
     }
 
     /** The answer without the machine lines (they become dish cards, the price check and buttons). */

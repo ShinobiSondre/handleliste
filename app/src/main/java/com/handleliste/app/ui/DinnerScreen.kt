@@ -551,7 +551,7 @@ private fun MakeListButton(d: Dinner.Dish, fromList: List<String>) {
     var made by remember(d.name) { mutableStateOf(false) }
     OutlinedButton(
         onClick = {
-            val items = (fromList + d.buy).distinctBy { it.lowercase() }
+            val items = Dinner.ingredientsForList(d, ChatUi.items().map { it.name })
             ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name])
             made = true
         },
