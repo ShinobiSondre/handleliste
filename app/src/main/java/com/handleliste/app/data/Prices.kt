@@ -11,7 +11,7 @@ data class PriceLine(val item: String, val price: Double?, val where: String, va
 /**
  * Today's prices for food, for the budget dinner:
  *  - this week's flyer deals near you (eTilbudsavis), which are the cheapest when they exist
- *  - otherwise the normal price from Oda's online store, as a guide to what it costs in a shop
+ *  - otherwise the normal price from MENY or Oda, as a guide to what it costs in a shop
  */
 object Prices {
     /** Dinner ingredients that make sense to tell the AI about. */
@@ -39,7 +39,7 @@ object Prices {
         return "- ${o.heading.lowercase()}${if (pack.isNotBlank()) " ($pack)" else ""}: ${"%.2f".format(o.price)} kr hos ${o.store}"
     }
 
-    /** What each grocery costs now: cheapest deal near you, else Oda's normal price. */
+    /** What each grocery costs now: cheapest deal near you, else the normal store price (MENY or Oda). */
     suspend fun check(ctx: Context, items: List<String>): List<PriceLine> {
         val flyers = Flyers.cached(ctx)
         return coroutineScope {
@@ -50,8 +50,8 @@ object Prices {
                     if (deal != null) PriceLine(item, deal.price, deal.store, deal.heading.lowercase(), true)
                     else {
                         val p = runCatching { Catalog.search(term) }.getOrDefault(emptyList())
-                            .take(6).filter { it.price != null }.minByOrNull { it.price!! }
-                        if (p != null) PriceLine(item, p.price, "Oda", p.name, false)
+                            .take(8).filter { it.price != null }.minByOrNull { it.price!! }
+                        if (p != null) PriceLine(item, p.price, p.source, p.name, false)
                         else PriceLine(item, null, "", "", false)
                     }
                 }

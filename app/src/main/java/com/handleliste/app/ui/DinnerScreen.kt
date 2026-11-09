@@ -323,7 +323,7 @@ fun DinnerChat(onClose: () -> Unit) {
     }
 }
 
-/** Checks the plan against today's prices: deals near you first, else Oda's normal price. */
+/** Checks the plan against today's prices: deals near you first, else the normal store price (MENY or Oda). */
 @Composable
 private fun PriceCheck(items: List<String>, budget: Int) {
     val ctx = LocalContext.current
@@ -364,7 +364,7 @@ private fun PriceCheck(items: List<String>, budget: Int) {
                     else tr("Over your $budget kr. Ask for something cheaper below.", "Over budsjettet på $budget kr. Be om noe billigere under."),
                     fontSize = 12.sp, color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
-                Text(tr("Whole packs. Deals near you, otherwise Oda's normal price as a guide.", "Hele pakninger. Tilbud nær deg, ellers Odas vanlige pris som pekepinn."),
+                Text(tr("Whole packs. Deals near you, otherwise the normal store price (MENY or Oda) as a guide.", "Hele pakninger. Tilbud nær deg, ellers vanlig butikkpris (MENY eller Oda) som pekepinn."),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

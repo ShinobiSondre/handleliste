@@ -152,4 +152,21 @@ class ParseTest {
         assertTrue(p.contains("REMA 1000"))
         assertTrue(p.contains("BUY:") || p.contains("HANDLE:"))
     }
+
+    @Test fun meny() {
+        val json = """{"total":2,"hits":[{"title":"Pesto","description":"Alla Genovese 150g Jacobs","imageId":"7035620025204/meny",
+            "contentData":{"pricePerUnit":49.9,"brand":"Jacobs utvalgte","imagePath":"7035620025204/meny","isForSale":true,"productSoldByWeight":false}},
+            {"title":"Kyllingfilet","description":"1,5kg First Price","contentData":{"pricePerUnit":187,"imagePath":"x/meny","isForSale":true}}]}"""
+        val p = Parse.menyProducts(json)
+        assertEquals("Pesto Alla Genovese Jacobs", p[0].name)
+        assertEquals("150g", p[0].extra)
+        assertEquals("https://bilder.ngdata.no/7035620025204/meny/small.jpg", p[0].image)
+        assertEquals("MENY", p[0].source)
+        assertEquals("Kyllingfilet First Price", p[1].name)
+        assertEquals("1,5kg", p[1].extra)
+        // Jacobs pesto from MENY matches the KIWI flyer deal on Jacobs Genovese pesto.
+        val pin = Parse.pinFromProduct(p[0])
+        assertTrue(Parse.pinMatches(pin, offer("PESTO", "KIWI", 24.9, "Jacobs Utvalgte, Genovese, 185 g")))
+        assertTrue(!Parse.pinMatches(pin, offer("BARILLA PESTO", "MENY", 29.9, "Rosso eller Genovese, 190 g")))
+    }
 }

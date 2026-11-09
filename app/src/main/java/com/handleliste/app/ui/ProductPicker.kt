@@ -159,7 +159,7 @@ fun ProductPicker() {
                 }
                 items(products, key = { "p" + it.name + it.extra }) { p -> ProductTile(p) { choose(Parse.pinFromProduct(p)) } }
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(tr("Product range and pictures from Oda. Deals from eTilbudsavis.", "Sortiment og bilder fra Oda. Tilbud fra eTilbudsavis."),
+                    Text(tr("Product range and pictures from MENY and Oda. Deals from eTilbudsavis.", "Sortiment og bilder fra MENY og Oda. Tilbud fra eTilbudsavis."),
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -210,5 +210,6 @@ private fun OfferTile(o: Offer, onClick: () -> Unit) {
 
 @Composable
 private fun ProductTile(p: Product, onClick: () -> Unit) {
-    Tile(p.image, p.name, p.extra, p.price?.let { "≈ " + kr(it) }.orEmpty(), MaterialTheme.colorScheme.onSurface, null, onClick)
+    Tile(p.image, p.name, listOf(p.extra, p.source).filter { it.isNotBlank() }.joinToString(" · "),
+        p.price?.let { "≈ " + kr(it) }.orEmpty(), MaterialTheme.colorScheme.onSurface, null, onClick)
 }

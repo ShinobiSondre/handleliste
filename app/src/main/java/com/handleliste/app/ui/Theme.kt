@@ -6,6 +6,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -15,7 +17,7 @@ val Green = Color(0xFF1F7A4D)
 val Leaf = Color(0xFF145C39)     // deep green (cards, update dialog)
 val Mint = Color(0xFFDFF3E7)
 val Sun = Color(0xFFFFD54F)      // deal yellow
-val Tomato = Color(0xFFE5533D)   // sale tags
+val Tomato = Color(0xFFB3361F)   // sale tags (dark enough to read on white: 6:1)
 val Ink = Color(0xFF14201A)
 val Paper = Color(0xFFF4F7F2)
 
@@ -48,14 +50,18 @@ private val Dark = darkColorScheme(
 @Composable
 fun HandlelisteTheme(content: @Composable () -> Unit) {
     val t = Typography()
+    val scheme = if (isSystemInDarkTheme()) Dark else Light
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) Dark else Light,
+        colorScheme = scheme,
         typography = t.copy(
             headlineMedium = t.headlineMedium.copy(fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
             titleLarge = t.titleLarge.copy(fontWeight = FontWeight.Bold),
             titleMedium = t.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             bodyLarge = TextStyle(fontSize = 17.sp, lineHeight = 24.sp),
         ),
-        content = content
-    )
+    ) {
+        // Text drawn straight on the app background (full-screen panels outside the Scaffold) gets
+        // the readable text colour for light or dark mode, instead of plain black.
+        CompositionLocalProvider(LocalContentColor provides scheme.onBackground, content = content)
+    }
 }

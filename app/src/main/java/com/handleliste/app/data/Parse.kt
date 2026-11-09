@@ -51,7 +51,7 @@ data class Pin(
 )
 
 /** A product from Oda's range (the picker's "all products"). */
-data class Product(val name: String, val brand: String, val extra: String, val price: Double?, val image: String?, val imageLarge: String?)
+data class Product(val name: String, val brand: String, val extra: String, val price: Double?, val image: String?, val imageLarge: String?, val source: String = "Oda")
 
 /** Today's shelf price for a product at one chain (Kassalapp). */
 data class ChainPrice(val chain: String, val product: String, val price: Double, val image: String?)
@@ -261,6 +261,31 @@ object Parse {
         }.filter { it.name.isNotBlank() }
     }
 
+    /**
+     * MENY's range (NorgesGruppen, so also Jacobs Utvalgte, First Price, Eldorado, Prior …).
+     * Title "Pesto", description "Alla Genovese 150g Jacobs".
+     */
+    fun menyProducts(json: String): List<Product> {
+        val hits = JSONObject(json).optJSONArray("hits") ?: return emptyList()
+        val size = Regex("(?i)(\\d+\\s?x\\s?)?\\d+([,.]\\d+)?\\s?(g|kg|l|dl|cl|ml|stk|pk)\\b")
+        return (0 until hits.length()).mapNotNull { i ->
+            val h = hits.optJSONObject(i) ?: return@mapNotNull null
+            val c = h.optJSONObject("contentData") ?: JSONObject()
+            if (!c.optBoolean("isForSale", true)) return@mapNotNull null
+            val desc = h.optString("description")
+            val pack = size.find(desc)?.value.orEmpty()
+            val name = (h.optString("title") + " " + desc.replace(size, " ")).replace(Regex("\\s+"), " ").trim()
+            val img = c.optString("imagePath").ifBlank { h.optString("imageId") }.takeIf { it.isNotBlank() && it != "null" }
+            Product(
+                name = name, brand = c.optString("brand"), extra = pack,
+                price = if (c.optBoolean("productSoldByWeight")) null else c.optDouble("pricePerUnit", Double.NaN).takeIf { !it.isNaN() && it > 0 },
+                image = img?.let { "https://bilder.ngdata.no/$it/small.jpg" },
+                imageLarge = img?.let { "https://bilder.ngdata.no/$it/large.jpg" },
+                source = "MENY",
+            )
+        }.filter { it.name.isNotBlank() }
+    }
+
     private val STOP = setOf("med", "og", "av", "til", "for", "smak", "uten", "the", "and", "with", "naturell", "pr", "per", "ca", "stk", "pakke", "pk")
 
     /** The words that identify a product: brand, kind and variant, without sizes and filler. */
@@ -269,7 +294,7 @@ object Parse {
             .filter { it.length >= 3 && it !in STOP && it !in setOf("stk", "pakke", "gram", "liter") }
             .distinct().take(6)
 
-    fun pinFromProduct(p: Product) = Pin(p.name, p.extra, p.image, "oda", keywords(p.name))
+    fun pinFromProduct(p: Product) = Pin(p.name, p.extra, p.image, p.source.lowercase(), keywords(p.name))
 
     fun pinFromOffer(o: Offer): Pin {
         // Flyers put the brand first in the small print: "Solvinge, 400 g, 112,25 pr. kg".
