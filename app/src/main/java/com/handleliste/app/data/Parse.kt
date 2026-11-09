@@ -1,0 +1,234 @@
+package com.handleliste.app.data
+
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+// Pure parsing and matching code, with no Android in it, so the cloud build can unit-test it.
+
+/** A weekly-flyer deal from eTilbudsavis / Tjek. */
+data class Offer(
+    val id: String,
+    val heading: String,
+    val description: String,
+    val store: String,
+    val price: Double,
+    val prePrice: Double?,
+    val currency: String,
+    val runTill: String,
+    val image: String?,
+) {
+    val savingsPct: Int? get() = prePrice?.takeIf { it > price }?.let { (((it - price) / it) * 100).toInt() }
+}
+
+/** A grocery shop from OpenStreetMap. */
+data class Shop(
+    val id: String,
+    val name: String,
+    val brand: String,
+    val kind: String,
+    val lat: Double,
+    val lng: Double,
+    /** Buildings (ways) are measured from their middle, so they get a bit more room. */
+    val isArea: Boolean,
+)
+
+/** Today's shelf price for a product at one chain (Kassalapp). */
+data class ChainPrice(val chain: String, val product: String, val price: Double, val image: String?)
+
+data class Recipe(
+    val title: String,
+    val minutes: Int,
+    val servings: Int,
+    val uses: List<String>,
+    val missing: List<String>,
+    val ingredients: List<String>,
+    val steps: List<String>,
+    val why: String,
+)
+
+object Parse {
+
+    fun tjekOffers(json: String): List<Offer> {
+        val arr = JSONArray(json)
+        val out = ArrayList<Offer>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val pricing = o.optJSONObject("pricing") ?: continue
+            val price = pricing.optDouble("price", Double.NaN)
+            if (price.isNaN() || price <= 0) continue
+            val pre = pricing.optDouble("pre_price", Double.NaN).takeIf { !it.isNaN() && it > price }
+            val store = o.optJSONObject("branding")?.optString("name").orEmpty()
+                .ifBlank { o.optJSONObject("dealer")?.optString("name").orEmpty() }
+            val images = o.optJSONObject("images")
+            out += Offer(
+                id = o.optString("id"),
+                heading = o.optString("heading").trim(),
+                description = o.optString("description").takeIf { it != "null" }.orEmpty().trim(),
+                store = store.trim(),
+                price = price,
+                prePrice = pre,
+                currency = pricing.optString("currency", "NOK").ifBlank { "NOK" },
+                runTill = o.optString("run_till"),
+                image = images?.optString("thumb")?.takeIf { it.startsWith("http") }
+                    ?: images?.optString("view")?.takeIf { it.startsWith("http") },
+            )
+        }
+        return out
+    }
+
+    fun overpassShops(json: String): List<Shop> {
+        val els = JSONObject(json).optJSONArray("elements") ?: return emptyList()
+        val out = ArrayList<Shop>()
+        for (i in 0 until els.length()) {
+            val e = els.optJSONObject(i) ?: continue
+            val type = e.optString("type")
+            val center = e.optJSONObject("center")
+            val lat = if (center != null) center.optDouble("lat") else e.optDouble("lat", Double.NaN)
+            val lng = if (center != null) center.optDouble("lon") else e.optDouble("lon", Double.NaN)
+            if (lat.isNaN() || lng.isNaN()) continue
+            val tags = e.optJSONObject("tags") ?: JSONObject()
+            val brand = tags.optString("brand")
+            val name = tags.optString("name").ifBlank { brand }.ifBlank { tags.optString("shop") }
+            out += Shop(
+                id = "$type/${e.optLong("id")}",
+                name = name,
+                brand = brand.ifBlank { name },
+                kind = tags.optString("shop"),
+                lat = lat, lng = lng,
+                isArea = type != "node",
+            )
+        }
+        return out
+    }
+
+    /** Kassalapp /products search → cheapest matching product per chain. */
+    fun kassalCheapestPerChain(json: String): List<ChainPrice> {
+        val data = JSONObject(json).optJSONArray("data") ?: return emptyList()
+        val best = LinkedHashMap<String, ChainPrice>()
+        for (i in 0 until data.length()) {
+            val p = data.optJSONObject(i) ?: continue
+            val price = when (val cp = p.opt("current_price")) {
+                is Number -> cp.toDouble()
+                is JSONObject -> cp.optDouble("price", Double.NaN)
+                else -> Double.NaN
+            }
+            if (price.isNaN() || price <= 0) continue
+            val chain = p.optJSONObject("store")?.optString("name").orEmpty()
+            if (chain.isBlank()) continue
+            val cur = best[chain]
+            if (cur == null || price < cur.price) {
+                best[chain] = ChainPrice(chain, p.optString("name"), price, p.optString("image").takeIf { it.startsWith("http") })
+            }
+        }
+        return best.values.sortedBy { it.price }
+    }
+
+    /** The AI answer: a JSON array of recipes (or an object holding one). */
+    fun recipes(text: String): List<Recipe> {
+        val t = text.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        val arr = if (t.startsWith("[")) JSONArray(t) else {
+            val o = JSONObject(t)
+            o.optJSONArray("recipes") ?: o.optJSONArray("dinners") ?: JSONArray()
+        }
+        fun JSONObject.list(key: String): List<String> {
+            val a = optJSONArray(key) ?: return emptyList()
+            return (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotBlank() }
+        }
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            Recipe(
+                title = o.optString("title").ifBlank { return@mapNotNull null },
+                minutes = o.optInt("minutes", 30),
+                servings = o.optInt("servings", 2),
+                uses = o.list("uses"),
+                missing = o.list("missing"),
+                ingredients = o.list("ingredients"),
+                steps = o.list("steps"),
+                why = o.optString("why"),
+            )
+        }
+    }
+
+    /** Text the Gemini API returns inside its response wrapper. */
+    fun geminiText(json: String): String {
+        val c = JSONObject(json).optJSONArray("candidates")?.optJSONObject(0) ?: return ""
+        val parts = c.optJSONObject("content")?.optJSONArray("parts") ?: return ""
+        return (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }
+    }
+
+    // ---- matching ----
+
+    /** "2 l Melk!" → "melk". Drops amounts and units so the search hits the product. */
+    fun searchTerm(item: String): String {
+        val units = setOf("stk", "pk", "pakke", "pakker", "l", "dl", "cl", "ml", "g", "kg", "hg", "x", "boks", "bokser", "flaske", "flasker", "pcs", "pack")
+        return item.lowercase()
+            .replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+            .split(" ").filter { it.isNotBlank() && it.toDoubleOrNull() == null && it !in units && !it.matches(Regex("\\d+\\p{L}{0,2}")) }
+            .joinToString(" ").trim()
+            .ifBlank { item.trim().lowercase() }
+    }
+
+    /** Does a deal really belong to this list item? (Search results can be loose.) */
+    fun offerMatches(term: String, offer: Offer): Boolean {
+        val words = term.lowercase().split(" ").filter { it.length >= 3 }
+        if (words.isEmpty()) return true
+        val hay = (offer.heading + " " + offer.description).lowercase()
+        return words.all { hay.contains(it) }
+    }
+
+    /** "REMA 1000", "Rema1000" and "rema" all become "rema1000"-ish keys that can be compared. */
+    fun chainKey(name: String): String {
+        val k = name.lowercase().replace(Regex("[^a-z0-9æøå]"), "")
+        return when {
+            k.startsWith("rema") -> "rema1000"
+            k.startsWith("kiwi") -> "kiwi"
+            k.startsWith("meny") -> "meny"
+            k.startsWith("spar") || k.startsWith("eurospar") -> "spar"
+            k.startsWith("joker") -> "joker"
+            k.startsWith("bunnpris") -> "bunnpris"
+            k.contains("extra") -> "coopextra"
+            k.contains("obs") -> "coopobs"
+            k.contains("prix") -> "coopprix"
+            k.contains("mega") -> "coopmega"
+            k.contains("marked") && k.contains("coop") -> "coopmarked"
+            k.startsWith("coop") -> "coop"
+            k.startsWith("narvesen") -> "narvesen"
+            k.startsWith("7eleven") -> "7eleven"
+            k.startsWith("oda") -> "oda"
+            else -> k
+        }
+    }
+
+    fun sameChain(a: String, b: String): Boolean {
+        val x = chainKey(a); val y = chainKey(b)
+        if (x.isBlank() || y.isBlank()) return false
+        return x == y || (x.length >= 4 && y.startsWith(x)) || (y.length >= 4 && x.startsWith(y))
+    }
+
+    fun distanceM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val r = 6371000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLng = Math.toRadians(lng2 - lng1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2) * sin(dLng / 2)
+        return 2 * r * atan2(sqrt(a), sqrt(1 - a))
+    }
+
+    /** The shop you are standing in, if any: close enough to it, and your position is precise enough. */
+    fun shopAt(shops: List<Shop>, lat: Double, lng: Double, accuracyM: Float): Shop? {
+        if (accuracyM > 65f) return null
+        return shops
+            .map { it to distanceM(lat, lng, it.lat, it.lng) }
+            .filter { (s, d) -> d <= (if (s.isArea) 55.0 else 40.0) + (accuracyM / 3.0) }
+            .minByOrNull { it.second }?.first
+    }
+
+    /** Splits "melk, brød og egg" into three items. */
+    fun splitItems(input: String): List<String> =
+        input.split(Regex(",|;|\\n| og | and ")).map { it.trim() }.filter { it.isNotBlank() }
+            .map { it.replaceFirstChar { c -> c.uppercase() } }
+}

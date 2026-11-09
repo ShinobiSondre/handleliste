@@ -1,0 +1,117 @@
+package com.handleliste.app
+
+import android.content.Intent
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import com.handleliste.app.data.ListRepo
+import com.handleliste.app.data.Settings
+import com.handleliste.app.ui.DealsScreen
+import com.handleliste.app.ui.DinnerScreen
+import com.handleliste.app.ui.HandlelisteTheme
+import com.handleliste.app.ui.InStoreSplash
+import com.handleliste.app.ui.ListScreen
+import com.handleliste.app.ui.SettingsScreen
+import com.handleliste.app.ui.WatchState
+import com.handleliste.app.ui.runDealsCheck
+import com.handleliste.app.update.UpdateOverlay
+import com.handleliste.app.update.Updater
+import com.handleliste.app.util.Lang
+import com.handleliste.app.util.tr
+import com.handleliste.app.watch.StoreAlert
+import com.handleliste.app.watch.StoreWatchService
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Lang.init(this)
+        ListRepo.init(this)
+        StoreAlert.channels(this)
+        enableEdgeToEdge()
+        handle(intent)
+        Updater.start(this)
+        setContent {
+            HandlelisteTheme {
+                var tab by rememberSaveable { mutableIntStateOf(0) }
+                val scope = rememberCoroutineScope()
+                BackHandler(enabled = tab != 0 || StoreAlert.splash != null) {
+                    if (StoreAlert.splash != null) StoreAlert.splash = null else tab = 0
+                }
+                Box(Modifier.fillMaxSize()) {
+                    Scaffold(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        bottomBar = {
+                            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                                val tabs = listOf(
+                                    Triple(Icons.AutoMirrored.Filled.List, tr("List", "Liste"), 0),
+                                    Triple(Icons.Filled.LocalOffer, tr("Deals", "Tilbud"), 1),
+                                    Triple(Icons.Filled.Restaurant, tr("Dinner", "Middag"), 2),
+                                    Triple(Icons.Filled.Settings, tr("Settings", "Innstillinger"), 3),
+                                )
+                                tabs.forEach { (icon, label, i) ->
+                                    NavigationBarItem(selected = tab == i, onClick = { tab = i },
+                                        icon = { Icon(icon, null) }, label = { Text(label, maxLines = 1) })
+                                }
+                            }
+                        }
+                    ) { pad ->
+                        Box(Modifier.padding(pad)) {
+                            when (tab) {
+                                0 -> ListScreen(
+                                    onCheckDeals = { tab = 1; scope.launch { runDealsCheck(this@MainActivity) } },
+                                    onDinner = { tab = 2 },
+                                    onSettings = { tab = 3 },
+                                )
+                                1 -> DealsScreen()
+                                2 -> DinnerScreen()
+                                else -> SettingsScreen()
+                            }
+                        }
+                    }
+                    InStoreSplash()
+                    UpdateOverlay()
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Updater.onResume(this)
+        WatchState.refresh(this)
+        // Keep the store watcher running while it's switched on (Android may have stopped it).
+        if (Settings.watchOn(this) && StoreWatchService.hasLocation(this)) StoreWatchService.start(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent?) {
+        intent?.getStringExtra(StoreAlert.EXTRA_STORE)?.let { StoreAlert.splash = it }
+    }
+}

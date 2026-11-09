@@ -1,0 +1,68 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore: [ "README.md", ".github/workflows/probe.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Test and build release APK
+        run: |
+          set +e
+          gradle :app:testReleaseUnitTest :app:assembleRelease --no-daemon 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Show the errors as annotations so they can be read without the full log.
+            grep -E "^e: |What went wrong|Could not (resolve|find)|> .*(error|failed)|FAILED|AssertionError|expected:" -A2 build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
+
+      # Not needed for the build: shows (in the run summary) that the free data sources answer as expected.
+      - name: Check the free APIs
+        continue-on-error: true
+        run: |
+          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/offers/search?r_lat=59.744&r_lng=10.204&r_radius=15000&r_locale=nb_NO&api_av=0.3.0&query=melk&limit=40" -w " HTTP%{http_code}")
+          echo "::notice title=Tjek offers (melk, Drammen)::$(echo "$r" | tail -c 20) $(echo "${r% HTTP*}" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d),"offers;",sorted({(o.get("branding") or {}).get("name") for o in d})[:12],"|",[(o["heading"],o["pricing"]["price"],o["pricing"].get("pre_price")) for o in d[:4]])' 2>&1 | head -c 900)"
+          q='[out:json][timeout:25];nwr(around:600,59.7440,10.2045)["shop"~"^(supermarket|convenience|grocery)$"];out center tags;'
+          o=$(curl -sS -m 30 --data-urlencode "data=$q" https://overpass-api.de/api/interpreter)
+          echo "::notice title=Overpass (Drammen sentrum)::$(echo "$o" | python3 -c 'import json,sys;d=json.load(sys.stdin)["elements"];print(len(d),"stores:",[(e["type"],e.get("tags",{}).get("name")) for e in d][:10])' 2>&1 | head -c 900)"
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk Handleliste-v1.0.${{ github.run_number }}.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Handleliste-apk
+          path: Handleliste-*.apk
+
+      # The app checks this release on start and installs it by itself.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Handleliste v1.0.${{ github.run_number }}
+          body: ${{ github.event.head_commit.message || 'Built by hand from the Actions tab.' }}
+          files: Handleliste-*.apk
+          make_latest: true
