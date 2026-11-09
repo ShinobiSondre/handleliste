@@ -145,4 +145,11 @@ class ParseTest {
         assertEquals(21.14, prod.price!!, 0.001)
         assertEquals(listOf("barilla", "pesto", "alla", "genovese"), Parse.pinFromProduct(prod).keywords)
     }
+
+    @Test fun budgetPrompt() {
+        val p = com.handleliste.app.data.Dinner.budgetPrompt(100, 2, listOf("Melk"), "", listOf("- kyllingkjøttdeig (Solvinge, 400 g): 39.90 kr hos REMA 1000"), "")
+        assertTrue(p.contains("100"))
+        assertTrue(p.contains("REMA 1000"))
+        assertTrue(p.contains("BUY:") || p.contains("HANDLE:"))
+    }
 }

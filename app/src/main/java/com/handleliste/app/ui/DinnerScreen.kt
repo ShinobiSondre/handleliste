@@ -74,6 +74,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import com.handleliste.app.data.ChatGptBridge
+import com.handleliste.app.data.Flyers
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.handleliste.app.data.PriceLine
+import com.handleliste.app.data.Prices
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.text.style.TextOverflow
 import com.handleliste.app.data.Deals
 import com.handleliste.app.data.Dinner
 import com.handleliste.app.data.ListRepo
@@ -91,6 +103,10 @@ fun DinnerScreen() {
         tr("Cheap", "Billig"), tr("Healthy", "Sunn"), tr("Cosy / comfort food", "Kos / hverdagsfavoritt"),
     )
     val turns by ChatGptBridge.turns.collectAsState()
+    var budget by rememberSaveable { mutableFloatStateOf(100f) }
+    var servings by rememberSaveable { mutableIntStateOf(2) }
+    var preparing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     fun ask() {
         val list = ListRepo.open.map { it.name }
@@ -100,6 +116,29 @@ fun DinnerScreen() {
             (if (list.isNotEmpty()) "\n" + list.joinToString(", ") else "") +
             (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "")
         ChatGptBridge.reset()
+        ChatUi.budget = null
+        (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
+        ChatUi.open = true
+    }
+
+    fun askBudget() = scope.launch {
+        // Make sure this week's prices are on the phone (they usually are, from the automatic deals check).
+        if (Flyers.cached(ctx).isEmpty()) {
+            preparing = true
+            runCatching {
+                val loc = currentLocation(ctx)
+                Flyers.near(ctx, loc?.first ?: Deals.FALLBACK_LAT, loc?.second ?: Deals.FALLBACK_LNG,
+                    com.handleliste.app.data.Settings.radiusKm(ctx) * 1000)
+            }
+            preparing = false
+        }
+        val deals = Prices.dinnerDeals(ctx).map { Prices.dealLine(it) }
+        val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ListRepo.open.map { it.name }, extra, deals, wishes.joinToString(", "))
+        val shown = tr("Make me dinner for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "people"}",
+            "Lag middag for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
+            (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
+        ChatGptBridge.reset()
+        ChatUi.budget = budget.toInt()
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
     }
@@ -141,6 +180,42 @@ fun DinnerScreen() {
             Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
             Text(tr("Ask ChatGPT for dinner ideas", "Spør ChatGPT om middag"), fontSize = 16.sp)
         }
+        Spacer(Modifier.height(16.dp))
+        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Savings, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Dinner on a budget", "Middag på budsjett"), style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(tr("Planned with this week's real deals near you, then price-checked.", "Planlagt med ukens ekte tilbud nær deg, og prissjekket etterpå."),
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("${budget.toInt()} kr", fontSize = 30.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Spacer(Modifier.weight(1f))
+                    // Servings: − 2 +
+                    IconButton(onClick = { if (servings > 1) servings-- }) { Text("−", fontSize = 22.sp, color = MaterialTheme.colorScheme.onTertiaryContainer) }
+                    Text(tr("$servings ${if (servings == 1) "person" else "people"}", "$servings ${if (servings == 1) "person" else "pers."}"),
+                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    IconButton(onClick = { if (servings < 8) servings++ }) { Text("+", fontSize = 22.sp, color = MaterialTheme.colorScheme.onTertiaryContainer) }
+                }
+                Slider(value = budget, onValueChange = { budget = (Math.round(it / 10f) * 10f) }, valueRange = 50f..500f)
+                Text(tr("About ${(budget / servings).toInt()} kr per person", "Ca. ${(budget / servings).toInt()} kr per person"),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = { askBudget() }, modifier = Modifier.fillMaxWidth(), enabled = !preparing) {
+                    Icon(Icons.Filled.Restaurant, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text(tr("Make me dinner for ${budget.toInt()} kr", "Lag middag for ${budget.toInt()} kr"))
+                }
+                if (preparing) {
+                    Text(tr("Getting this week's prices near you…", "Henter ukens priser nær deg …"),
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        }
         if (turns.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(onClick = { ChatUi.open = true }, modifier = Modifier.fillMaxWidth()) {
@@ -151,7 +226,11 @@ fun DinnerScreen() {
 }
 
 /** Whether the dinner chat is on screen (drawn over the whole app by MainActivity). */
-object ChatUi { var open by mutableStateOf(false) }
+object ChatUi {
+    var open by mutableStateOf(false)
+    /** Set when the chat is a budget dinner, so the price check can compare against it. */
+    var budget by mutableStateOf<Int?>(null)
+}
 
 /** The app's own chat with ChatGPT: answers stream in, follow-ups stay in the same conversation. */
 @Composable
@@ -195,7 +274,10 @@ fun DinnerChat(onClose: () -> Unit) {
                         Bubble(Dinner.display(t.text), mine = false)
                         val missing = Dinner.missing(t.text)
                         val last = i == turns.lastIndex
-                        if (missing.isNotEmpty() && (!last || status == ChatGptBridge.Status.DONE)) AddMissing(missing)
+                        if (missing.isNotEmpty() && (!last || status == ChatGptBridge.Status.DONE)) {
+                            if (ChatUi.budget != null) PriceCheck(missing, ChatUi.budget!!)
+                            AddMissing(missing)
+                        }
                     }
                 }
                 if (thinking && turns.lastOrNull()?.user != false) item { Bubble("…", mine = false) }
@@ -212,7 +294,7 @@ fun DinnerChat(onClose: () -> Unit) {
                 }
             }
             if (status == ChatGptBridge.Status.DONE) {
-                val quick = listOf(
+                val quick = (if (ChatUi.budget != null) listOf(tr("Even cheaper", "Enda billigere"), tr("Without meat", "Uten kjøtt")) else emptyList()) + listOf(
                     tr("Other ideas", "Andre forslag"), tr("Make it vegetarian", "Gjør det vegetar"),
                     tr("Quicker, please", "Noe raskere"), tr("For 4 people", "For 4 personer"), tr("Dessert too?", "Dessert også?"),
                 )
@@ -236,6 +318,54 @@ fun DinnerChat(onClose: () -> Unit) {
                 IconButton(onClick = { send(input) }, enabled = input.isNotBlank() && !thinking) {
                     Icon(Icons.AutoMirrored.Filled.Send, tr("Send", "Send"), tint = MaterialTheme.colorScheme.primary)
                 }
+            }
+        }
+    }
+}
+
+/** Checks the plan against today's prices: deals near you first, else Oda's normal price. */
+@Composable
+private fun PriceCheck(items: List<String>, budget: Int) {
+    val ctx = LocalContext.current
+    var lines by remember(items) { mutableStateOf<List<PriceLine>?>(null) }
+    LaunchedEffect(items) { lines = runCatching { Prices.check(ctx, items) }.getOrDefault(emptyList()) }
+    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(tr("Price check, today's prices", "Prissjekk med dagens priser"), fontWeight = FontWeight.Bold)
+            val l = lines
+            if (l == null) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp))
+                    Text(tr("Looking up prices…", "Henter priser …"), fontSize = 13.sp)
+                }
+            } else {
+                l.forEach { p ->
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(p.item, fontSize = 14.sp)
+                            if (p.price != null) Text((if (p.onSale) "🏷️ " else "") + p.where + " · " + p.product, fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Text(p.price?.let { kr(it) } ?: "?", fontWeight = FontWeight.SemiBold,
+                            color = if (p.onSale) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+                val total = l.sumOf { it.price ?: 0.0 }
+                val unknown = l.count { it.price == null }
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(tr("Total", "Totalt") + if (unknown > 0) tr(" (+$unknown unknown)", " (+$unknown ukjent)") else "",
+                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(kr(total), fontWeight = FontWeight.Black, fontSize = 18.sp,
+                        color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                }
+                Text(
+                    if (total <= budget) tr("✓ Under your $budget kr", "✓ Under budsjettet på $budget kr")
+                    else tr("Over your $budget kr. Ask for something cheaper below.", "Over budsjettet på $budget kr. Be om noe billigere under."),
+                    fontSize = 12.sp, color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+                Text(tr("Whole packs. Deals near you, otherwise Oda's normal price as a guide.", "Hele pakninger. Tilbud nær deg, ellers Odas vanlige pris som pekepinn."),
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

@@ -1,0 +1,61 @@
+package com.handleliste.app.data
+
+import android.content.Context
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+
+/** One line of a price check: what it costs right now and where that price comes from. */
+data class PriceLine(val item: String, val price: Double?, val where: String, val product: String, val onSale: Boolean)
+
+/**
+ * Today's prices for food, for the budget dinner:
+ *  - this week's flyer deals near you (eTilbudsavis), which are the cheapest when they exist
+ *  - otherwise the normal price from Oda's online store, as a guide to what it costs in a shop
+ */
+object Prices {
+    /** Dinner ingredients that make sense to tell the AI about. */
+    private val DINNER = listOf(
+        "kjøttdeig", "kylling", "kyllingfilet", "kyllinglår", "laks", "torsk", "sei", "fisk", "fiskekaker", "fiskeboller", "reker",
+        "svin", "kotelett", "koteletter", "karbonade", "pølse", "pølser", "bacon", "skinke", "biff", "entrecote", "lam", "kjøtt", "kalkun",
+        "pasta", "spaghetti", "makaroni", "ris", "nudler", "potet", "poteter", "tortilla", "lefse", "lomper", "taco", "pizza",
+        "egg", "ost", "rømme", "fløte", "matfløte", "melk", "smør", "løk", "tomat", "tomater", "hermetisk", "paprika", "brokkoli",
+        "gulrot", "gulrøtter", "agurk", "salat", "mais", "bønner", "linser", "kikerter", "sopp", "squash", "kål", "frossen", "wok",
+        "suppe", "saus", "pesto", "brød", "hvitløk", "grønnsaker",
+    )
+
+    private fun isDinnerFood(o: Offer): Boolean {
+        val h = (o.heading + " " + o.description.substringBefore("\n")).lowercase()
+        return DINNER.any { h.contains(it) } && !Regex("(?i)(sjampo|vaskemiddel|bleier|kattemat|hundemat|godteri|sjokolade|brus|øl)").containsMatchIn(h)
+    }
+
+    /** The cheapest dinner-type deals near you this week, for the AI to plan with. */
+    fun dinnerDeals(ctx: Context, limit: Int = 45): List<Offer> =
+        Flyers.cached(ctx).filter { isDinnerFood(it) && it.price < 250 }
+            .sortedBy { it.price }.distinctBy { it.heading.lowercase() + it.store }.take(limit)
+
+    fun dealLine(o: Offer): String {
+        val pack = o.description.lines().firstOrNull { it.contains(",") }?.take(50).orEmpty()
+        return "- ${o.heading.lowercase()}${if (pack.isNotBlank()) " ($pack)" else ""}: ${"%.2f".format(o.price)} kr hos ${o.store}"
+    }
+
+    /** What each grocery costs now: cheapest deal near you, else Oda's normal price. */
+    suspend fun check(ctx: Context, items: List<String>): List<PriceLine> {
+        val flyers = Flyers.cached(ctx)
+        return coroutineScope {
+            items.map { item ->
+                async {
+                    val term = Parse.searchTerm(item)
+                    val deal = Parse.matchOffers(term, flyers).minByOrNull { it.price }
+                    if (deal != null) PriceLine(item, deal.price, deal.store, deal.heading.lowercase(), true)
+                    else {
+                        val p = runCatching { Catalog.search(term) }.getOrDefault(emptyList())
+                            .take(6).filter { it.price != null }.minByOrNull { it.price!! }
+                        if (p != null) PriceLine(item, p.price, "Oda", p.name, false)
+                        else PriceLine(item, null, "", "", false)
+                    }
+                }
+            }.awaitAll()
+        }
+    }
+}
