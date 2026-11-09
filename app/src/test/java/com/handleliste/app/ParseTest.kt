@@ -230,4 +230,12 @@ RETT: Kyllingtaco | HANDLE: lomper, rømme | BRUKER: kylling, mais
         assertTrue(!shown.contains("HANDLE"))
         assertEquals("https://x/y.jpg", Parse.odaRecipePicture("""{"items":[{"type":"recipe","attributes":{"title":"Taco","feature_image_url":"https://x/y.jpg"}}]}"""))
     }
+
+    @Test fun dishImagesAndCommons() {
+        val d = com.handleliste.app.data.Dinner.dishes("RETT: Pestopasta | HANDLE: ingenting | BRUKER: pasta | BILDE: pesto pasta chicken")
+        assertEquals("pesto pasta chicken", d.single().imageQuery)
+        val json = """{"query":{"pages":{"-1":{"index":2,"imageinfo":[{"thumburl":"https://up/b.jpg","mime":"image/jpeg"}]},
+            "-2":{"index":1,"imageinfo":[{"thumburl":"https://up/a.jpg","mime":"image/jpeg"}]}}}}"""
+        assertEquals("https://up/a.jpg", Parse.commonsPicture(json))
+    }
 }

@@ -38,7 +38,7 @@ object Catalog {
      * A photo for a dish name, from Oda's recipes (an illustration, not the exact dish). Long names
      * rarely match, so it tries shorter versions: "Kremet pesto-pasta med kylling" → "pesto pasta kylling" → "pesto pasta" …
      */
-    suspend fun dishPicture(name: String): String? {
+    suspend fun dishPicture(name: String, imageQuery: String = ""): String? {
         val key = name.lowercase().trim()
         if (recipePics.containsKey(key)) return recipePics[key]
         val words = Parse.keywords(name).filter { it !in setOf("kremet", "enkel", "rask", "hjemmelaget", "ovnsbakt", "stekt", "god", "deilig", "klassisk") }
@@ -47,6 +47,18 @@ object Catalog {
         for (q in tries.distinct().filter { it.isNotBlank() }) {
             found = runCatching { Parse.odaRecipePicture(Http.get("https://oda.com/api/v1/search/mixed/?q=${Http.enc(q)}&type=recipe")) }.getOrNull()
             if (found != null) break
+        }
+        // Nothing at Oda: a free photo from Wikimedia Commons, searched with ChatGPT's English words for the dish.
+        if (found == null) {
+            val q = imageQuery.ifBlank { words.take(3).joinToString(" ") }
+            val shorter = q.split(" ").filter { it.isNotBlank() }
+            for (attempt in listOf(q, shorter.take(2).joinToString(" "), shorter.lastOrNull().orEmpty() + " dish").distinct().filter { it.isNotBlank() }) {
+                found = runCatching {
+                    Parse.commonsPicture(Http.get("https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search" +
+                        "&gsrnamespace=6&gsrlimit=6&gsrsearch=${Http.enc("filetype:bitmap $attempt food")}&prop=imageinfo&iiprop=url|mime&iiurlwidth=600"))
+                }.getOrNull()
+                if (found != null) break
+            }
         }
         recipePics[key] = found
         return found

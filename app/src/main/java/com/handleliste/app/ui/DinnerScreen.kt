@@ -70,6 +70,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -109,6 +110,7 @@ import com.handleliste.app.data.PriceLine
 import com.handleliste.app.data.Prices
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -312,6 +314,8 @@ object ChatUi {
     /** Which lists the dinner is based on (empty = the list you're on). */
     val listIds = mutableStateListOf<String>()
     fun chosen(): List<String> = listIds.filter { id -> ListRepo.lists.any { it.id == id } }.ifEmpty { listOf(ListRepo.currentId) }
+    /** Photos found for dishes (dish name → picture), used for a list made from a dish. */
+    val dishPics = mutableStateMapOf<String, String>()
     /** Which dish you picked in each answer (answer index → dish index). */
     val pickedDish = mutableStateMapOf<Int, Int>()
     /** Open items on the chosen lists. */
@@ -531,6 +535,7 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (ChatUi.budget != null && (d.buy.isNotEmpty() || fromList.isNotEmpty())) PriceCheck(d.buy, fromList, ChatUi.budget ?: 0)
                 if (d.buy.isNotEmpty()) AddMissing(d.buy, d.name)
+                MakeListButton(d, fromList)
                 else Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                     Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
                         Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
@@ -540,10 +545,31 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
     }
 }
 
+/** "Lag liste": a new shopping list for the dish, with all its ingredients and its photo. */
+@Composable
+private fun MakeListButton(d: Dinner.Dish, fromList: List<String>) {
+    var made by remember(d.name) { mutableStateOf(false) }
+    OutlinedButton(
+        onClick = {
+            val items = (fromList + d.buy).distinctBy { it.lowercase() }
+            ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name])
+            made = true
+        },
+        enabled = !made, modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(if (made) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+        Text(if (made) tr("New list \"${d.name}\" made", "Ny liste «${d.name}» er laget")
+            else tr("Make a shopping list for ${d.name}", "Lag handleliste for ${d.name}"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 @Composable
 private fun DishCard(d: Dinner.Dish, selected: Boolean, onClick: () -> Unit) {
     var pic by remember(d.name) { mutableStateOf<String?>(null) }
-    LaunchedEffect(d.name) { pic = runCatching { com.handleliste.app.data.Catalog.dishPicture(d.name) }.getOrNull() }
+    LaunchedEffect(d.name) {
+        pic = runCatching { com.handleliste.app.data.Catalog.dishPicture(d.name, d.imageQuery) }.getOrNull()
+        pic?.let { ChatUi.dishPics[d.name] = it }
+    }
     val border by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, label = "dish")
     val scale by animateFloatAsState(if (selected) 1.03f else 1f, label = "dishScale")
     Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp,

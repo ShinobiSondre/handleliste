@@ -294,6 +294,21 @@ object Parse {
         }.filter { it.name.isNotBlank() }
     }
 
+    /** The first photo in a Wikimedia Commons image search (free pictures). */
+    fun commonsPicture(json: String): String? {
+        val pages = JSONObject(json).optJSONObject("query")?.optJSONObject("pages") ?: return null
+        val list = pages.keys().asSequence().mapNotNull { pages.optJSONObject(it) }
+            .sortedBy { it.optInt("index", 999) }.toList()
+        for (p in list) {
+            val info = p.optJSONArray("imageinfo")?.optJSONObject(0) ?: continue
+            val mime = info.optString("mime")
+            if (mime.isNotEmpty() && !mime.startsWith("image/jpeg") && !mime.startsWith("image/png") && !mime.startsWith("image/webp")) continue
+            val u = info.optString("thumburl").ifBlank { info.optString("url") }
+            if (u.startsWith("http")) return u
+        }
+        return null
+    }
+
     /** The first recipe photo in an Oda recipe search. */
     fun odaRecipePicture(json: String): String? {
         val items = JSONObject(json).optJSONArray("items") ?: return null

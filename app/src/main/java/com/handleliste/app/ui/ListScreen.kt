@@ -124,7 +124,7 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp)) {
         item {
-            Hero(open.size, done.size, ListRepo.current?.name.orEmpty(), onSettings)
+            Hero(open.size, done.size, ListRepo.current?.name.orEmpty(), ListRepo.current?.image, onSettings)
             Spacer(Modifier.height(12.dp))
             // One tab per list; hold a tab to rename or delete it.
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -141,7 +141,11 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
                         modifier = Modifier.clip(RoundedCornerShape(50))
                             .combinedClickable(onClick = { ListRepo.select(l.id) }, onLongClick = { editing = l })
                     ) {
-                        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.padding(start = if (l.image != null) 6.dp else 14.dp, end = 14.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (l.image != null) {
+                                AsyncImage(l.image, null, Modifier.size(24.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                                Spacer(Modifier.width(6.dp))
+                            }
                             Text(l.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
                             if (count > 0) { Spacer(Modifier.width(6.dp)); Text("$count", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                         }
@@ -327,7 +331,7 @@ private fun Suggestions(list: List<Suggestion>) {
 
 /** The top of the list: greeting, list name, a progress ring that fills as you tick things off. */
 @Composable
-private fun Hero(open: Int, done: Int, listName: String, onSettings: () -> Unit) {
+private fun Hero(open: Int, done: Int, listName: String, image: String?, onSettings: () -> Unit) {
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
     val greet = when (hour) {
         in 5..9 -> tr("Good morning", "God morgen")
@@ -342,6 +346,11 @@ private fun Hero(open: Int, done: Int, listName: String, onSettings: () -> Unit)
         Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
             .background(Brush.linearGradient(if (dark) listOf(Color(0xFF1E5A3B), Color(0xFF0F3322)) else listOf(Color(0xFF2E9E66), Color(0xFF145C39))))
     ) {
+        // A list made from a dish shows the dish's photo behind a dark-green veil.
+        if (image != null) {
+            AsyncImage(image, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xF00F3322), Color(0x990F3322)))))
+        }
         // Soft decorative circles.
         Canvas(Modifier.matchParentSize()) {
             drawCircle(Color.White.copy(alpha = 0.07f), radius = size.height * 0.9f, center = Offset(size.width * 0.95f, -size.height * 0.1f))

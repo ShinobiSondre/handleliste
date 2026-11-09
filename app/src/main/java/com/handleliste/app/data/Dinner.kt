@@ -22,7 +22,7 @@ object Dinner {
                 "navn på retten, tid, hvorfor den passer, og en enkel oppskrift med ingredienser og fremgangsmåte for hver.\n")
             b.append("Gi hver rett en kort overskrift med navnet. Avslutt svaret med én linje per rett, nøyaktig slik: " +
                 "«RETT: <navn> | HANDLE: <det jeg må kjøpe, korte varenavn slik de heter i norske butikker, adskilt med komma> | " +
-                "BRUKER: <varer fra handlelisten min som retten bruker>». Skriv «ingenting» der det er tomt.")
+                "BRUKER: <varer fra handlelisten min som retten bruker> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
         } else {
             b.append("What can I make for dinner? Suggest 3 dinners, built as much as possible from what I'm buying.\n")
             b.append("My shopping list: ${list.joinToString(", ").ifBlank { "(empty)" }}\n")
@@ -32,7 +32,7 @@ object Dinner {
             b.append("Assume I have salt, pepper, oil, butter and common spices. Keep it short and clear: " +
                 "dish name, time, why it fits, and a simple recipe with ingredients and steps for each.\n")
             b.append("Give each dish a short heading with its name. End the answer with one line per dish, exactly like this: " +
-                "\"DISH: <name> | BUY: <what I must buy, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses>\". " +
+                "\"DISH: <name> | BUY: <what I must buy, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
                 "Write \"nothing\" where empty.")
         }
         return b.toString()
@@ -57,7 +57,7 @@ object Dinner {
             b.append("Totalen skal være alt middagen koster: varene fra handlelisten som brukes + det jeg må kjøpe i tillegg.\n")
             b.append("Avslutt svaret med én linje per rett (hovedforslaget og reserven), nøyaktig slik: " +
                 "«RETT: <navn> | HANDLE: <det jeg må kjøpe i tillegg, korte varenavn adskilt med komma> | " +
-                "BRUKER: <varer fra handlelisten min som retten bruker>». Skriv «ingenting» der det er tomt.")
+                "BRUKER: <varer fra handlelisten min som retten bruker> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
         } else {
             b.append("Make a dinner for $servings ${if (servings == 1) "person" else "people"} that costs at most $budget NOK in total to buy.\n")
             if (deals.isNotEmpty()) {
@@ -73,7 +73,7 @@ object Dinner {
                 "Use Norwegian 2025–2026 prices where the deals don't cover it. Stay under $budget NOK.\n")
             b.append("The total is everything the dinner costs: the shopping-list items it uses + what I must buy extra.\n")
             b.append("End the answer with one line per dish (the main one and the backup), exactly like this: " +
-                "\"DISH: <name> | BUY: <what I must buy extra, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses>\". " +
+                "\"DISH: <name> | BUY: <what I must buy extra, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
                 "Write \"nothing\" where empty.")
         }
         return b.toString()
@@ -108,7 +108,7 @@ object Dinner {
     private val EMPTY = setOf("ingenting", "nothing", "ingen", "none", "-", "")
 
     /** One dish ChatGPT suggested: what to buy for it, and which list items it uses. */
-    data class Dish(val name: String, val buy: List<String>, val uses: List<String>)
+    data class Dish(val name: String, val buy: List<String>, val uses: List<String>, val imageQuery: String = "")
 
     private fun items(s: String) = s.replace("*", "").split(",", ";").map { it.trim().trimEnd('.') }
         .filter { it.lowercase() !in EMPTY && it.length < 40 }
@@ -120,7 +120,9 @@ object Dinner {
         if (name.isBlank()) return@mapNotNull null
         fun part(vararg keys: String) = parts.drop(1).firstOrNull { p -> keys.any { p.uppercase().startsWith(it) } }
             ?.substringAfter(":")?.let { items(it) }.orEmpty()
-        Dish(name, part("HANDLE", "BUY", "KJØP"), part("BRUKER", "USES"))
+        val img = parts.drop(1).firstOrNull { p -> p.uppercase().startsWith("BILDE") || p.uppercase().startsWith("IMAGE") }
+            ?.substringAfter(":")?.replace("*", "")?.trim().orEmpty()
+        Dish(name, part("HANDLE", "BUY", "KJØP"), part("BRUKER", "USES"), img)
     }.distinctBy { it.name.lowercase() }.toList()
 
     /** A dish's "BRUKER" items matched back to the names on your list. */

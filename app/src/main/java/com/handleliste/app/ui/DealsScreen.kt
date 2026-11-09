@@ -1,6 +1,13 @@
 package com.handleliste.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.runtime.LaunchedEffect
+import com.handleliste.app.data.Flyers
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
@@ -98,6 +105,27 @@ fun DealsScreen() {
     val scope = rememberCoroutineScope()
     var zoom by remember { mutableStateOf<Offer?>(null) }
     var showFollows by remember { mutableStateOf(false) }
+    // Search all of this week's deals near you for any food, not just what's on your lists.
+    var query by rememberSaveable { mutableStateOf("") }
+    var found by remember { mutableStateOf<List<Offer>?>(null) }
+    var searching by remember { mutableStateOf(false) }
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.length < 2) { found = null; return@LaunchedEffect }
+        delay(250)
+        searching = true
+        found = withContext(Dispatchers.Default) {
+            var all = Flyers.cachedAsync(ctx)
+            if (all.isEmpty()) all = runCatching {
+                val loc = currentLocation(ctx)
+                Flyers.near(ctx, loc?.first ?: Deals.FALLBACK_LAT, loc?.second ?: Deals.FALLBACK_LNG, Settings.radiusKm(ctx) * 1000)
+            }.getOrDefault(emptyList())
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.ROOT)
+                .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+            Parse.matchOffers(Parse.searchTerm(q), all, now, limit = 60)
+        }
+        searching = false
+    }
     // First row (with several lists): all lists, or one list. Second row: all stores, or one store.
     var listTab by rememberSaveable { mutableStateOf("") }
     if (listTab.isNotEmpty() && ListRepo.lists.none { it.id == listTab }) listTab = ""
@@ -139,15 +167,22 @@ fun DealsScreen() {
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
             }
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(16.dp),
+                placeholder = { Text(tr("Search deals: coffee, salmon, Grandiosa …", "Søk i tilbud: kaffe, laks, Grandiosa …")) },
+                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, tr("Clear", "Tøm")) } }
+            )
         }
-        if (ListRepo.lists.size > 1) {
+        if (ListRepo.lists.size > 1 && found == null) {
             Spacer(Modifier.height(8.dp))
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { ListTab(tr("All lists", "Alle lister"), listTab == "") { listTab = "" } }
                 items(ListRepo.lists, key = { it.id }) { l -> ListTab(l.name, listTab == l.id) { listTab = l.id } }
             }
         }
-        if (stores.isNotEmpty()) {
+        if (stores.isNotEmpty() && found == null) {
             Spacer(Modifier.height(8.dp))
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { StoreTab(tr("All", "Alle"), null, tab == "") { tab = "" } }
@@ -156,12 +191,35 @@ fun DealsScreen() {
         }
 
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Deals.error?.let { e -> item { Note(e) } }
-            if (Deals.usedFallbackLocation && Deals.fetchedAt > 0) {
+            val hits = found
+            if (hits != null) {
+                item {
+                    Text(
+                        when {
+                            searching && hits.isEmpty() -> tr("Searching…", "Søker …")
+                            hits.isEmpty() -> tr("No deals on \"${query.trim()}\" this week", "Ingen tilbud på «${query.trim()}» denne uken")
+                            else -> tr("${hits.size} deals on \"${query.trim()}\"", "${hits.size} tilbud på «${query.trim()}»")
+                        },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                if (hits.isNotEmpty()) item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            hits.forEachIndexed { i, o ->
+                                if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                SearchHit(o, onImage = { zoom = o })
+                            }
+                        }
+                    }
+                }
+            }
+            if (hits == null) Deals.error?.let { e -> item { Note(e) } }
+            if (hits == null && Deals.usedFallbackLocation && Deals.fetchedAt > 0) {
                 item { Note(tr("Location is off, so these are deals around Oslo. Turn on location for stores near you.",
                     "Posisjon er av, så dette er tilbud rundt Oslo. Slå på posisjon for butikker nær deg.")) }
             }
-            if (!Deals.loading && Deals.fetchedAt == 0L && results.isEmpty()) {
+            if (hits == null && !Deals.loading && Deals.fetchedAt == 0L && results.isEmpty()) {
                 item {
                     Text(
                         if (ListRepo.open.isEmpty()) tr("Add something to a list, and deals are checked by themselves.", "Legg til noe på en liste, så sjekkes tilbud av seg selv.")
@@ -171,7 +229,8 @@ fun DealsScreen() {
                 }
             }
 
-            if (tab.isEmpty()) {
+            if (hits != null) Unit
+            else if (tab.isEmpty()) {
                 items(results.sortedByDescending { it.offers.size }, key = { it.item }) { Box(Modifier.animateItem()) { ItemDealsCard(it) { o -> zoom = o } } }
             } else {
                 val here = results.flatMap { d -> d.offers.filter { it.store == tab }.map { d.item to it } }
@@ -196,7 +255,7 @@ fun DealsScreen() {
                 }
             }
 
-            if (Deals.fetchedAt > 0) {
+            if (hits == null && Deals.fetchedAt > 0) {
                 item {
                     Text(
                         (if (Deals.chains.isNotEmpty()) tr("Searched this week's flyers from ", "Søkte i ukens tilbudsaviser fra ") +
@@ -267,6 +326,26 @@ private fun FollowsSheet(onClose: () -> Unit) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** A search result: the deal, and "+ Liste" to put it on the list you're on. */
+@Composable
+private fun SearchHit(o: Offer, onImage: () -> Unit) {
+    var added by remember(o.id) { mutableStateOf(false) }
+    Column {
+        OfferRow(o, onImage = onImage)
+        Row(Modifier.fillMaxWidth().padding(start = 90.dp, end = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            val name = o.heading.lowercase().replaceFirstChar { it.uppercase() }
+            TextButton(onClick = {
+                ListRepo.add(name)
+                ListRepo.items.firstOrNull { it.name.equals(name, true) }?.let { ListRepo.setPin(it.id, Parse.pinFromOffer(o)) }
+                added = true
+            }, enabled = !added) {
+                Icon(if (added) Icons.Filled.Check else Icons.Filled.Add, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
+                Text(if (added) tr("On your list", "På listen") else tr("Add to list", "Legg i listen"), fontSize = 13.sp)
             }
         }
     }
