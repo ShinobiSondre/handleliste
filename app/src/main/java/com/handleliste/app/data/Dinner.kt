@@ -20,8 +20,9 @@ object Dinner {
             if (wishes.isNotBlank()) b.append("Ønsker: $wishes\n")
             b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Svar på norsk, kort og oversiktlig: " +
                 "navn på retten, tid, hvorfor den passer, og en enkel oppskrift med ingredienser og fremgangsmåte for hver.\n")
-            b.append("Avslutt med én linje som starter med «HANDLE:» og ramser opp det jeg mangler for alle tre, " +
-                "med korte varenavn slik de heter i norske butikker, adskilt med komma. Skriv «HANDLE: ingenting» hvis jeg har alt.")
+            b.append("Gi hver rett en kort overskrift med navnet. Avslutt svaret med én linje per rett, nøyaktig slik: " +
+                "«RETT: <navn> | HANDLE: <det jeg må kjøpe, korte varenavn slik de heter i norske butikker, adskilt med komma> | " +
+                "BRUKER: <varer fra handlelisten min som retten bruker>». Skriv «ingenting» der det er tomt.")
         } else {
             b.append("What can I make for dinner? Suggest 3 dinners, built as much as possible from what I'm buying.\n")
             b.append("My shopping list: ${list.joinToString(", ").ifBlank { "(empty)" }}\n")
@@ -30,8 +31,9 @@ object Dinner {
             if (wishes.isNotBlank()) b.append("Wishes: $wishes\n")
             b.append("Assume I have salt, pepper, oil, butter and common spices. Keep it short and clear: " +
                 "dish name, time, why it fits, and a simple recipe with ingredients and steps for each.\n")
-            b.append("End with one line starting with \"BUY:\" listing what I'm missing for all three, short grocery names, " +
-                "separated by commas. Write \"BUY: nothing\" if I have everything.")
+            b.append("Give each dish a short heading with its name. End the answer with one line per dish, exactly like this: " +
+                "\"DISH: <name> | BUY: <what I must buy, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses>\". " +
+                "Write \"nothing\" where empty.")
         }
         return b.toString()
     }
@@ -53,9 +55,9 @@ object Dinner {
                 "Foreslå 1 middag (og gjerne 1 billigere reserve). Vis en kort handleliste med pris per vare og butikk, totalsum, og en enkel oppskrift. " +
                 "Bruk norske priser for 2025–2026 der tilbudene ikke dekker det. Hold deg under $budget kr. Svar på norsk.\n")
             b.append("Totalen skal være alt middagen koster: varene fra handlelisten som brukes + det jeg må kjøpe i tillegg.\n")
-            b.append("Avslutt med nøyaktig to linjer for hovedforslaget, korte varenavn adskilt med komma: " +
-                "én som starter med «BRUKER:» med varene fra handlelisten min som middagen bruker (skriv «BRUKER: ingen» hvis ingen), " +
-                "og én som starter med «HANDLE:» med det jeg må kjøpe i tillegg.")
+            b.append("Avslutt svaret med én linje per rett (hovedforslaget og reserven), nøyaktig slik: " +
+                "«RETT: <navn> | HANDLE: <det jeg må kjøpe i tillegg, korte varenavn adskilt med komma> | " +
+                "BRUKER: <varer fra handlelisten min som retten bruker>». Skriv «ingenting» der det er tomt.")
         } else {
             b.append("Make a dinner for $servings ${if (servings == 1) "person" else "people"} that costs at most $budget NOK in total to buy.\n")
             if (deals.isNotEmpty()) {
@@ -70,9 +72,9 @@ object Dinner {
                 "Suggest 1 dinner (and maybe 1 cheaper backup). Show a short shopping list with price per item and store, the total, and a simple recipe. " +
                 "Use Norwegian 2025–2026 prices where the deals don't cover it. Stay under $budget NOK.\n")
             b.append("The total is everything the dinner costs: the shopping-list items it uses + what I must buy extra.\n")
-            b.append("End with exactly two lines for the main suggestion, short grocery names separated by commas: " +
-                "one starting with \"USES:\" with the items from my shopping list the dinner uses (\"USES: none\" if none), " +
-                "and one starting with \"BUY:\" with what I must buy extra.")
+            b.append("End the answer with one line per dish (the main one and the backup), exactly like this: " +
+                "\"DISH: <name> | BUY: <what I must buy extra, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses>\". " +
+                "Write \"nothing\" where empty.")
         }
         return b.toString()
     }
@@ -102,6 +104,31 @@ object Dinner {
         }
     }
 
-    /** The answer without the "HANDLE:"/"BRUKER:" lines (they become the price check and a button). */
-    fun display(answer: String): String = answer.replace(BUY_LINE, "").replace(USES_LINE, "").trim()
+    private val DISH_LINE = Regex("(?im)^\\W*(RETT|DISH)\\s*\\d*[*\\s]*[:.][*\\s]*([^\\n|]+\\|[^\\n]*)$")
+    private val EMPTY = setOf("ingenting", "nothing", "ingen", "none", "-", "")
+
+    /** One dish ChatGPT suggested: what to buy for it, and which list items it uses. */
+    data class Dish(val name: String, val buy: List<String>, val uses: List<String>)
+
+    private fun items(s: String) = s.replace("*", "").split(",", ";").map { it.trim().trimEnd('.') }
+        .filter { it.lowercase() !in EMPTY && it.length < 40 }
+
+    /** The dishes from ChatGPT's "RETT: name | HANDLE: … | BRUKER: …" lines. */
+    fun dishes(answer: String): List<Dish> = DISH_LINE.findAll(answer).mapNotNull { m ->
+        val parts = m.groupValues[2].split("|").map { it.trim() }
+        val name = parts.first().replace("*", "").trim().trimEnd('.')
+        if (name.isBlank()) return@mapNotNull null
+        fun part(vararg keys: String) = parts.drop(1).firstOrNull { p -> keys.any { p.uppercase().startsWith(it) } }
+            ?.substringAfter(":")?.let { items(it) }.orEmpty()
+        Dish(name, part("HANDLE", "BUY", "KJØP"), part("BRUKER", "USES"))
+    }.distinctBy { it.name.lowercase() }.toList()
+
+    /** A dish's "BRUKER" items matched back to the names on your list. */
+    fun usesFromList(d: Dish, list: List<String>): List<String> = list.filter { item ->
+        val t = Parse.searchTerm(item)
+        d.uses.any { n -> val l = n.lowercase(); l.contains(t) || t.contains(l) || Parse.searchTerm(l) == t }
+    }
+
+    /** The answer without the machine lines (they become dish cards, the price check and buttons). */
+    fun display(answer: String): String = answer.replace(DISH_LINE, "").replace(BUY_LINE, "").replace(USES_LINE, "").trim()
 }

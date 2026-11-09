@@ -294,6 +294,23 @@ object Parse {
         }.filter { it.name.isNotBlank() }
     }
 
+    /** The first recipe photo in an Oda recipe search. */
+    fun odaRecipePicture(json: String): String? {
+        val items = JSONObject(json).optJSONArray("items") ?: return null
+        for (i in 0 until items.length()) {
+            val it = items.optJSONObject(i) ?: continue
+            if (it.optString("type") != "recipe") continue
+            val a = it.optJSONObject("attributes") ?: continue
+            listOf("feature_image_url", "image_url", "image").forEach { k ->
+                a.optString(k).takeIf { u -> u.startsWith("http") }?.let { u -> return u.replace("width=1000", "width=600") }
+            }
+            a.optJSONArray("images")?.optJSONObject(0)?.let { img ->
+                (img.optJSONObject("large")?.optString("url") ?: img.optString("url")).takeIf { u -> u.startsWith("http") }?.let { return it }
+            }
+        }
+        return null
+    }
+
     private val STOP = setOf("med", "og", "av", "til", "for", "smak", "uten", "the", "and", "with", "naturell", "pr", "per", "ca", "stk", "pakke", "pk")
 
     /** The words that identify a product: brand, kind and variant, without sizes and filler. */

@@ -31,4 +31,24 @@ object Catalog {
         cache[q] = res
         return res
     }
+
+    private val recipePics = HashMap<String, String?>()
+
+    /**
+     * A photo for a dish name, from Oda's recipes (an illustration, not the exact dish). Long names
+     * rarely match, so it tries shorter versions: "Kremet pesto-pasta med kylling" → "pesto pasta kylling" → "pesto pasta" …
+     */
+    suspend fun dishPicture(name: String): String? {
+        val key = name.lowercase().trim()
+        if (recipePics.containsKey(key)) return recipePics[key]
+        val words = Parse.keywords(name).filter { it !in setOf("kremet", "enkel", "rask", "hjemmelaget", "ovnsbakt", "stekt", "god", "deilig", "klassisk") }
+        val tries = listOf(name) + (words.size downTo 1).map { n -> words.take(n).joinToString(" ") } + words.reversed().take(2)
+        var found: String? = null
+        for (q in tries.distinct().filter { it.isNotBlank() }) {
+            found = runCatching { Parse.odaRecipePicture(Http.get("https://oda.com/api/v1/search/mixed/?q=${Http.enc(q)}&type=recipe")) }.getOrNull()
+            if (found != null) break
+        }
+        recipePics[key] = found
+        return found
+    }
 }

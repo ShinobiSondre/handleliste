@@ -2,6 +2,20 @@ package com.handleliste.app.ui
 
 import android.app.Activity
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -136,6 +150,7 @@ fun DinnerScreen() {
             (if (list.isNotEmpty()) "\n" + list.joinToString(", ") else "") +
             (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "")
         ChatGptBridge.reset()
+        ChatUi.pickedDish.clear()
         ChatUi.budget = null
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
@@ -158,6 +173,7 @@ fun DinnerScreen() {
             "Lag middag for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
             (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
         ChatGptBridge.reset()
+        ChatUi.pickedDish.clear()
         ChatUi.budget = budget.toInt()
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
@@ -287,6 +303,7 @@ sealed class ChatEntry(val key: String) {
     class Msg(i: Int, val user: Boolean, val text: String) : ChatEntry("m$i")
     class Price(i: Int, val extra: List<String>, val fromList: List<String>) : ChatEntry("p$i")
     class Add(i: Int, val items: List<String>) : ChatEntry("a$i")
+    class Dishes(val turn: Int, val dishes: List<Dinner.Dish>) : ChatEntry("d$turn")
 }
 
 /** Whether the dinner chat is on screen (drawn over the whole app by MainActivity). */
@@ -295,6 +312,8 @@ object ChatUi {
     /** Which lists the dinner is based on (empty = the list you're on). */
     val listIds = mutableStateListOf<String>()
     fun chosen(): List<String> = listIds.filter { id -> ListRepo.lists.any { it.id == id } }.ifEmpty { listOf(ListRepo.currentId) }
+    /** Which dish you picked in each answer (answer index → dish index). */
+    val pickedDish = mutableStateMapOf<Int, Int>()
     /** Open items on the chosen lists. */
     fun items() = chosen().flatMap { ListRepo.itemsOf(it) }.filter { !it.checked }
     /** Set when the chat is a budget dinner, so the price check can compare against it. */
@@ -320,7 +339,10 @@ fun DinnerChat(onClose: () -> Unit) {
     val entries = buildList {
         shown.forEachIndexed { i, t ->
             add(ChatEntry.Msg(i, t.user, if (t.user) t.text else Dinner.display(t.text)))
-            if (!t.user && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
+            val dishes = if (t.user) emptyList() else Dinner.dishes(t.text)
+            if (!t.user && dishes.isNotEmpty() && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
+                add(ChatEntry.Dishes(i, dishes))
+            } else if (!t.user && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
                 val missing = Dinner.missing(t.text)
                 val fromList = if (ChatUi.budget != null) Dinner.usedFromList(t.text, listNames) else emptyList()
                 if (ChatUi.budget != null && (missing.isNotEmpty() || fromList.isNotEmpty())) add(ChatEntry.Price(i, missing, fromList))
@@ -375,6 +397,7 @@ fun DinnerChat(onClose: () -> Unit) {
                         is ChatEntry.Msg -> Bubble(e.text, mine = e.user)
                         is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget ?: 0)
                         is ChatEntry.Add -> AddMissing(e.items)
+                        is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames)
                     }
                 }
                 if (thinking) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
@@ -489,6 +512,59 @@ private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int)
     }
 }
 
+/**
+ * "Which one do you want?": a card per dish (with a photo), and for the one you pick: what you're
+ * missing for it, the button to add that to your list, and (budget dinners) the price check.
+ */
+@Composable
+private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<String>) {
+    val picked = ChatUi.pickedDish[turn] ?: if (dishes.size == 1) 0 else -1
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (dishes.size > 1) Text(tr("Which one do you want? Tap a dish", "Hvilken vil du lage? Trykk på en rett"),
+            fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            itemsIndexed(dishes) { j, d -> DishCard(d, selected = j == picked) { ChatUi.pickedDish[turn] = j } }
+        }
+        AnimatedVisibility(picked in dishes.indices, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            val d = dishes.getOrNull(picked) ?: return@AnimatedVisibility
+            val fromList = Dinner.usesFromList(d, listNames)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (ChatUi.budget != null && (d.buy.isNotEmpty() || fromList.isNotEmpty())) PriceCheck(d.buy, fromList, ChatUi.budget ?: 0)
+                if (d.buy.isNotEmpty()) AddMissing(d.buy, d.name)
+                else Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
+                        Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DishCard(d: Dinner.Dish, selected: Boolean, onClick: () -> Unit) {
+    var pic by remember(d.name) { mutableStateOf<String?>(null) }
+    LaunchedEffect(d.name) { pic = runCatching { com.handleliste.app.data.Catalog.dishPicture(d.name) }.getOrNull() }
+    val border by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, label = "dish")
+    val scale by animateFloatAsState(if (selected) 1.03f else 1f, label = "dishScale")
+    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp,
+        modifier = Modifier.width(190.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+            .border(if (selected) 2.5.dp else 1.dp, border, RoundedCornerShape(18.dp))) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(110.dp).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                if (pic != null) AsyncImage(pic, d.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Text("🍽️", fontSize = 34.sp)
+                if (selected) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(26.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center) { Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp)) }
+            }
+            Column(Modifier.padding(10.dp)) {
+                Text(d.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 19.sp)
+                Text(if (d.buy.isEmpty()) tr("Nothing to buy", "Ingenting å kjøpe") else tr("Buy ${d.buy.size} more", "Kjøp ${d.buy.size} til"),
+                    fontSize = 12.sp, color = if (d.buy.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 /** Three bouncing dots in a chat bubble while ChatGPT is thinking or writing. */
 @Composable
 private fun Typing(writing: Boolean) {
@@ -522,11 +598,12 @@ private fun Typing(writing: Boolean) {
 }
 
 @Composable
-private fun AddMissing(missing: List<String>) {
+private fun AddMissing(missing: List<String>, dish: String? = null) {
     var added by remember(missing) { mutableStateOf(false) }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Text(tr("You'd still need: ", "Du mangler: ") + missing.joinToString(", "), color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text((if (dish != null) tr("For $dish you need: ", "Til $dish mangler du: ") else tr("You'd still need: ", "Du mangler: ")) +
+                missing.joinToString(", "), color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.height(6.dp))
             Button(onClick = { ListRepo.add(missing.joinToString(","), ChatUi.chosen().first()); added = true }, enabled = !added) {
                 Icon(Icons.Filled.AddShoppingCart, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
@@ -539,15 +616,34 @@ private fun AddMissing(missing: List<String>) {
 
 @Composable
 private fun Bubble(text: String, mine: Boolean) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-        Surface(
-            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = if (mine) 18.dp else 4.dp, bottomEnd = if (mine) 4.dp else 18.dp),
-            color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-            contentColor = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-            tonalElevation = if (mine) 0.dp else 1.dp,
-            modifier = Modifier.widthIn(max = 340.dp)
-        ) {
-            Text(if (mine) AnnotatedString(text) else markdown(text), Modifier.padding(horizontal = 14.dp, vertical = 10.dp), fontSize = 15.sp, lineHeight = 21.sp)
+    // Answers use the full width (more room on a big screen); your own messages up to 85 %.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val maxW = if (mine) maxWidth * 0.85f else maxWidth
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+            Surface(
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (mine) 20.dp else 6.dp, bottomEnd = if (mine) 6.dp else 20.dp),
+                color = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                contentColor = if (mine) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                tonalElevation = if (mine) 0.dp else 1.dp,
+                modifier = Modifier.widthIn(max = maxW)
+            ) {
+                if (mine) Text(text, Modifier.padding(horizontal = 16.dp, vertical = 12.dp), fontSize = 16.sp, lineHeight = 22.sp)
+                else Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Pictures in ChatGPT's answer come through as ![](url) lines.
+                    val img = Regex("^!\\[[^\\]]*]\\((https?://[^)]+)\\)$")
+                    val blocks = mutableListOf<Pair<Boolean, String>>()
+                    text.lines().forEach { line ->
+                        val m = img.find(line.trim())
+                        if (m != null) blocks += true to m.groupValues[1]
+                        else if (blocks.lastOrNull()?.first == false) blocks[blocks.lastIndex] = false to blocks.last().second + "\n" + line
+                        else blocks += false to line
+                    }
+                    blocks.forEach { (isImg, v) ->
+                        if (isImg) AsyncImage(v, null, Modifier.fillMaxWidth().heightIn(max = 260.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                        else if (v.isNotBlank()) Text(markdown(v.trim('\n')), fontSize = 16.sp, lineHeight = 23.sp)
+                    }
+                }
+            }
         }
     }
 }

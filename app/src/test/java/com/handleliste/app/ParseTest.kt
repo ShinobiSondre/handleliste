@@ -209,4 +209,25 @@ class ParseTest {
         // The plain product ranks above the combo even when the combo is cheaper.
         assertEquals("BARILLA SPAGHETTI", Parse.matchOffers("spaghetti", listOf(lapskaus.copy(price = 9.0), spag)).first().heading)
     }
+
+    @Test fun dishLines() {
+        val a = """### Kyllingtaco
+Rett 1: Kyllingtaco er raskt.
+Fyll lomper med kylling.
+
+### Pestopasta
+Pasta og pesto.
+
+RETT: Kyllingtaco | HANDLE: lomper, rømme | BRUKER: kylling, mais
+**RETT:** Pestopasta | HANDLE: ingenting | BRUKER: pasta, pesto"""
+        val d = com.handleliste.app.data.Dinner.dishes(a)
+        assertEquals(listOf("Kyllingtaco", "Pestopasta"), d.map { it.name })
+        assertEquals(listOf("lomper", "rømme"), d[0].buy)
+        assertTrue(d[1].buy.isEmpty())
+        assertEquals(listOf("Kylling", "Mais"), com.handleliste.app.data.Dinner.usesFromList(d[0], listOf("Kylling", "Mais", "Melk")))
+        val shown = com.handleliste.app.data.Dinner.display(a)
+        assertTrue(shown.contains("Rett 1: Kyllingtaco er raskt."))   // headings/text that mention "Rett" stay
+        assertTrue(!shown.contains("HANDLE"))
+        assertEquals("https://x/y.jpg", Parse.odaRecipePicture("""{"items":[{"type":"recipe","attributes":{"title":"Taco","feature_image_url":"https://x/y.jpg"}}]}"""))
+    }
 }

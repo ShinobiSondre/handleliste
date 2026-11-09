@@ -81,6 +81,8 @@ object ChatGptBridge {
           if(n.nodeType===3)return n.nodeValue;
           if(n.nodeType!==1)return '';
           var t=n.tagName;
+          if(t==='IMG'){var u=n.currentSrc||n.getAttribute('src')||'';var w=n.naturalWidth||n.width||0;
+            return (u.indexOf('http')===0&&w>=80&&!/avatar|favicon|icon/i.test(u))?'\n![]('+u+')\n':'';}
           if(t==='BUTTON'||t==='svg'||t==='SVG'||t==='STYLE'||t==='SCRIPT'||n.getAttribute('aria-hidden')==='true'||n.hasAttribute('data-message-actions'))return '';
           var s='';for(var i=0;i<n.childNodes.length;i++)s+=mdN(n.childNodes[i]);
           if(/^H[1-6]$/.test(t))return '\n\n### '+s.trim()+'\n';
