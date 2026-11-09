@@ -20,6 +20,7 @@ data class Offer(
     val currency: String,
     val runTill: String,
     val image: String?,
+    val runFrom: String = "",
 ) {
     val savingsPct: Int? get() = prePrice?.takeIf { it > price }?.let { (((it - price) / it) * 100).toInt() }
 }
@@ -73,6 +74,7 @@ object Parse {
                 prePrice = pre,
                 currency = pricing.optString("currency", "NOK").ifBlank { "NOK" },
                 runTill = o.optString("run_till"),
+                runFrom = o.optString("run_from"),
                 image = images?.optString("thumb")?.takeIf { it.startsWith("http") }
                     ?: images?.optString("view")?.takeIf { it.startsWith("http") },
             )
@@ -172,6 +174,58 @@ object Parse {
             .ifBlank { item.trim().lowercase() }
     }
 
+    /** Flyer catalogs near you → (catalog id, chain) for grocery chains that have offers. */
+    fun groceryCatalogs(json: String): List<Pair<String, String>> {
+        val arr = JSONArray(json)
+        return (0 until arr.length()).mapNotNull { i ->
+            val c = arr.optJSONObject(i) ?: return@mapNotNull null
+            val chain = c.optJSONObject("branding")?.optString("name").orEmpty()
+            if (c.optInt("offer_count", 0) <= 0 || !isGrocery(chain)) null else c.optString("id") to chain
+        }.distinctBy { it.first }
+    }
+
+    private val GROCERY = setOf(
+        "kiwi", "rema1000", "coopextra", "coopprix", "coopmega", "coopobs", "coopmarked", "coop", "meny", "spar",
+        "joker", "bunnpris", "holdbart", "europris", "oda", "naerbutikken", "nærbutikken", "matkroken", "matkrogen",
+        "lidl", "ccmat", "afoodmarket", "alltimat", "dagsmarked", "7eleven",
+    )
+
+    fun isGrocery(chain: String): Boolean {
+        val k = chainKey(chain)
+        return k in GROCERY
+    }
+
+    /**
+     * The deals for one list item among all this week's offers, best match first.
+     * Norwegian packs words together, so "melk" should find "Lettmelk", but a whole-word
+     * match in the product name ranks above a match only in the small print.
+     */
+    fun matchOffers(term: String, offers: List<Offer>, nowIso: String = ""): List<Offer> {
+        val words = term.lowercase().split(" ").filter { it.length >= 2 }
+        if (words.isEmpty()) return emptyList()
+        fun score(o: Offer): Int {
+            val head = o.heading.lowercase()
+            val desc = o.description.lowercase()
+            var total = 0
+            for (w in words) {
+                total += when {
+                    Regex("(^|[^\\p{L}])" + Regex.escape(w) + "($|[^\\p{L}])").containsMatchIn(head) -> 6
+                    head.endsWith(w) || head.split(Regex("[^\\p{L}]+")).any { it.endsWith(w) } -> 4 // lettMELK
+                    head.contains(w) -> 2 // sjokoMELKdrikk
+                    desc.contains(w) -> 1
+                    else -> return 0 // every word must be there
+                }
+            }
+            return total
+        }
+        return offers.asSequence()
+            .filter { nowIso.isEmpty() || it.runTill.isEmpty() || it.runTill >= nowIso }
+            .map { it to score(it) }.filter { it.second > 0 }
+            .sortedWith(compareByDescending<Pair<Offer, Int>> { it.second }.thenBy { it.first.price })
+            .map { it.first }.distinctBy { it.store + "|" + it.heading.lowercase() + "|" + it.price }
+            .take(10).toList()
+    }
+
     /** Does a deal really belong to this list item? (Search results can be loose.) */
     fun offerMatches(term: String, offer: Offer): Boolean {
         val words = term.lowercase().split(" ").filter { it.length >= 3 }
@@ -184,6 +238,8 @@ object Parse {
     fun chainKey(name: String): String {
         val k = name.lowercase().replace(Regex("[^a-z0-9æøå]"), "")
         return when {
+            // Hardware/electronics chains with grocery-sounding names: keep them apart.
+            k.contains("bygg") || k.contains("elektro") || k.startsWith("sparkj") -> k
             k.startsWith("rema") -> "rema1000"
             k.startsWith("kiwi") -> "kiwi"
             k.startsWith("meny") -> "meny"

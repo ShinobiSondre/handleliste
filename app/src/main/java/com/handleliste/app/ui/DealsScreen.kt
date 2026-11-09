@@ -57,9 +57,9 @@ import java.util.Date
 import java.util.Locale
 
 /** Starts a deals check for everything not yet ticked off. */
-suspend fun runDealsCheck(ctx: android.content.Context) {
+suspend fun runDealsCheck(ctx: android.content.Context, force: Boolean = false) {
     val loc = currentLocation(ctx)
-    Deals.check(ctx, ListRepo.open.map { it.name }, loc?.first, loc?.second)
+    Deals.check(ctx, ListRepo.open.map { it.name }, loc?.first, loc?.second, force)
 }
 
 @Composable
@@ -81,7 +81,7 @@ fun DealsScreen() {
                     }
                     Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = { scope.launch { runDealsCheck(ctx) } }, enabled = !Deals.loading) {
+                IconButton(onClick = { scope.launch { runDealsCheck(ctx, force = true) } }, enabled = !Deals.loading) {
                     Icon(Icons.Filled.Refresh, tr("Check again", "Sjekk igjen"))
                 }
             }
@@ -129,6 +129,8 @@ fun DealsScreen() {
         if (Deals.fetchedAt > 0) {
             item {
                 Text(
+                    (if (Deals.chains.isNotEmpty()) tr("Searched this week's flyers from ", "Søkte i ukens tilbudsaviser fra ") +
+                        Deals.chains.joinToString(", ") + ". " else "") +
                     tr("Deals from eTilbudsavis (Tjek). ", "Tilbud fra eTilbudsavis (Tjek). ") +
                         if (Settings.kassalKey(ctx).isNotBlank()) tr("Shelf prices from Kassalapp.", "Hyllepriser fra Kassalapp.")
                         else tr("Add a free Kassalapp key in Settings to also compare everyday prices.", "Legg inn en gratis Kassalapp-nøkkel i Innstillinger for å også sammenligne vanlige priser."),

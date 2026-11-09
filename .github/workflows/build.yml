@@ -43,11 +43,14 @@ jobs:
       - name: Check the free APIs
         continue-on-error: true
         run: |
-          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/offers/search?r_lat=59.744&r_lng=10.204&r_radius=15000&r_locale=nb_NO&api_av=0.3.0&query=melk&limit=40" -w " HTTP%{http_code}")
-          echo "::notice title=Tjek offers (melk, Drammen)::$(echo "$r" | tail -c 20) $(echo "${r% HTTP*}" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d),"offers;",sorted({(o.get("branding") or {}).get("name") for o in d})[:12],"|",[(o["heading"],o["pricing"]["price"],o["pricing"].get("pre_price")) for o in d[:4]])' 2>&1 | head -c 900)"
+          c=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/catalogs?r_lat=59.744&r_lng=10.204&r_radius=30000&r_locale=nb_NO&api_av=0.3.0&limit=100&types=paged,incito")
+          echo "::notice title=Flyers near Drammen::$(echo "$c" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d),"catalogs:",[((x.get("branding") or {}).get("name"),x.get("offer_count")) for x in d][:30])' 2>&1 | head -c 1200)"
+          id=$(echo "$c" | python3 -c 'import json,sys;print(next(x["id"] for x in json.load(sys.stdin) if (x.get("branding") or {}).get("name")=="KIWI"))' 2>/dev/null)
+          o=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/offers?catalog_ids=$id&limit=100&offset=0&api_av=0.3.0")
+          echo "::notice title=KIWI flyer::$(echo "$o" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d),"offers:",[(x["heading"],x["pricing"]["price"],x["pricing"].get("pre_price")) for x in d][:15])' 2>&1 | head -c 1200)"
           q='[out:json][timeout:25];nwr(around:600,59.7440,10.2045)["shop"~"^(supermarket|convenience|grocery)$"];out center tags;'
-          o=$(curl -sS -m 30 --data-urlencode "data=$q" https://overpass-api.de/api/interpreter)
-          echo "::notice title=Overpass (Drammen sentrum)::$(echo "$o" | python3 -c 'import json,sys;d=json.load(sys.stdin)["elements"];print(len(d),"stores:",[(e["type"],e.get("tags",{}).get("name")) for e in d][:10])' 2>&1 | head -c 900)"
+          m=$(curl -sS -m 40 -A "Handleliste/1.0 (Android; github.com/ShinobiSondre/handleliste)" --data-urlencode "data=$q" https://overpass-api.de/api/interpreter)
+          echo "::notice title=Stores in Drammen sentrum (OpenStreetMap)::$(echo "$m" | python3 -c 'import json,sys;d=json.load(sys.stdin)["elements"];print(len(d),[e.get("tags",{}).get("name") for e in d])' 2>&1 | tail -c 600)"
 
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk Handleliste-v1.0.${{ github.run_number }}.apk

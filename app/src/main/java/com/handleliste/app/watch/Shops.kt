@@ -19,7 +19,7 @@ object Shops {
 
     private val SERVERS = listOf(
         "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     )
     private const val KINDS = "supermarket|convenience|grocery|greengrocer|health_food|butcher|deli|frozen_food|general|wholesale"
 

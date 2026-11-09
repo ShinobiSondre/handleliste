@@ -118,7 +118,7 @@ fun SettingsScreen() {
         Section(tr("Deals", "Tilbud")) {
             var km by remember { mutableFloatStateOf(Settings.radiusKm(ctx).toFloat()) }
             Text(tr("Search stores within ${km.toInt()} km", "Søk i butikker innen ${km.toInt()} km"))
-            Slider(value = km, onValueChange = { km = it }, valueRange = 3f..50f,
+            Slider(value = km, onValueChange = { km = it }, valueRange = 25f..100f,
                 onValueChangeFinished = { Settings.setRadiusKm(ctx, km.toInt()) })
             Spacer(Modifier.height(6.dp))
             KeyField(

@@ -68,4 +68,23 @@ class ParseTest {
         assertTrue(!Parse.sameChain("KIWI", "Meny"))
         assertNotNull(Parse.chainKey("Spar"))
     }
+
+    private fun offer(h: String, store: String = "KIWI", p: Double = 20.0, d: String = "") =
+        com.handleliste.app.data.Offer(h, h, d, store, p, null, "NOK", "2026-11-15T22:59:59+0000", null)
+
+    @Test fun matching() {
+        val all = listOf(offer("SJOKOMELK", p = 69.0), offer("Tine Lettmelk 1 l", p = 22.0), offer("Melk", "REMA 1000", 19.0),
+            offer("Kaffe", d = "med melk"), offer("Brød grovt"), offer("Gammel melk").copy(runTill = "2026-11-01T00:00:00+0000"))
+        val m = Parse.matchOffers("melk", all, "2026-11-09T10:00:00")
+        assertEquals(listOf("Melk", "Tine Lettmelk 1 l", "SJOKOMELK", "Kaffe"), m.map { it.heading })
+        assertTrue(Parse.matchOffers("kyllingfilet", all).isEmpty())
+    }
+
+    @Test fun catalogs() {
+        val json = """[{"id":"a","offer_count":115,"branding":{"name":"KIWI"}},{"id":"b","offer_count":88,"branding":{"name":"Spar Kjøp"}},
+            {"id":"c","offer_count":59,"branding":{"name":"Obs! Bygg"}},{"id":"d","offer_count":169,"branding":{"name":"Obs"}},
+            {"id":"e","offer_count":0,"branding":{"name":"REMA 1000"}},{"id":"f","offer_count":94,"branding":{"name":"Extra"}},
+            {"id":"g","offer_count":18,"branding":{"name":"Coop Byggmix"}},{"id":"h","offer_count":135,"branding":{"name":"Bunnpris"}}]"""
+        assertEquals(listOf("KIWI", "Obs", "Extra", "Bunnpris"), Parse.groceryCatalogs(json).map { it.second })
+    }
 }

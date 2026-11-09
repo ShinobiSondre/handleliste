@@ -80,9 +80,9 @@ object Settings {
     fun kassalKey(ctx: Context) = p(ctx).getString("kassal", "").orEmpty().trim()
     fun setKassalKey(ctx: Context, k: String) = p(ctx).edit().putString("kassal", k.trim()).apply()
 
-    /** Deals radius in km (default 15). */
-    fun radiusKm(ctx: Context) = p(ctx).getInt("radius", 15)
-    fun setRadiusKm(ctx: Context, km: Int) = p(ctx).edit().putInt("radius", km).apply()
+    /** Deals radius in km. The flyer service needs at least ~25 km to find the regional flyers. */
+    fun radiusKm(ctx: Context) = p(ctx).getInt("radius2", 30).coerceAtLeast(25)
+    fun setRadiusKm(ctx: Context, km: Int) = p(ctx).edit().putInt("radius2", km).apply()
 
     fun lastLocation(ctx: Context): Pair<Double, Double>? {
         val s = p(ctx).getString("lastLoc", null) ?: return null

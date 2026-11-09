@@ -30,16 +30,14 @@ object Deals {
     var fetchedAt by mutableLongStateOf(0L); private set
     var usedFallbackLocation by mutableStateOf(false); private set
 
-    private val OFFER_HOSTS = listOf(
-        "https://squid-api.tjek.com/v2/offers/search",
-        "https://api.etilbudsavis.dk/v2/offers/search",
-    )
-
     /** Oslo sentrum, used only when the phone's location isn't available. */
     const val FALLBACK_LAT = 59.9133
     const val FALLBACK_LNG = 10.7389
 
-    suspend fun check(ctx: Context, items: List<String>, lat: Double?, lng: Double?) {
+    /** Chains whose flyers were searched in the last check. */
+    var chains by mutableStateOf<List<String>>(emptyList()); private set
+
+    suspend fun check(ctx: Context, items: List<String>, lat: Double?, lng: Double?, force: Boolean = false) {
         if (loading) return
         if (items.isEmpty()) { results = emptyList(); error = null; return }
         loading = true
@@ -49,17 +47,21 @@ object Deals {
         val ln = lng ?: FALLBACK_LNG
         val radius = Settings.radiusKm(ctx) * 1000
         val kassal = Settings.kassalKey(ctx)
-        val gate = Semaphore(4)
-        val failures = java.util.concurrent.atomic.AtomicInteger()
         try {
+            val flyers = runCatching { Flyers.near(ctx, la, ln, radius, force) }
+                .onFailure {
+                    error = tr("Couldn't reach the deals service. Check your internet and try again.",
+                        "Fikk ikke kontakt med tilbudstjenesten. Sjekk internett og prøv igjen.")
+                }.getOrDefault(emptyList())
+            chains = Flyers.chains
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.ROOT)
+                .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+            val gate = Semaphore(3)
             results = coroutineScope {
                 items.distinct().map { item ->
                     async {
                         val term = Parse.searchTerm(item)
-                        val offers = gate.withPermit {
-                            runCatching { offers(term, la, ln, radius) }
-                                .onFailure { failures.incrementAndGet() }.getOrDefault(emptyList())
-                        }
+                        val offers = Parse.matchOffers(term, flyers, now)
                         val prices = if (kassal.isNotBlank()) gate.withPermit {
                             runCatching { kassalPrices(term, kassal) }.getOrDefault(emptyList())
                         } else emptyList()
@@ -67,28 +69,10 @@ object Deals {
                     }
                 }.awaitAll()
             }
-            if (failures.get() == items.distinct().size) {
-                error = tr("Couldn't reach the deals service. Check your internet and try again.",
-                    "Fikk ikke kontakt med tilbudstjenesten. Sjekk internett og prøv igjen.")
-            }
-            fetchedAt = System.currentTimeMillis()
+            if (flyers.isNotEmpty() || kassal.isNotBlank()) fetchedAt = System.currentTimeMillis()
         } finally {
             loading = false
         }
-    }
-
-    private suspend fun offers(term: String, lat: Double, lng: Double, radius: Int): List<Offer> {
-        val q = "?r_lat=$lat&r_lng=$lng&r_radius=$radius&r_locale=nb_NO&api_av=0.3.0" +
-            "&query=${Http.enc(term)}&offset=0&limit=40"
-        var last: Exception? = null
-        for (host in OFFER_HOSTS) {
-            try {
-                val all = Parse.tjekOffers(Http.get(host + q))
-                val matching = all.filter { Parse.offerMatches(term, it) }
-                return matching.sortedBy { it.price }.distinctBy { it.store + it.heading + it.price }.take(12)
-            } catch (e: Exception) { last = e }
-        }
-        throw last ?: Exception("no host")
     }
 
     private suspend fun kassalPrices(term: String, key: String): List<ChainPrice> {
