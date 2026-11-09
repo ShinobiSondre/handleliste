@@ -291,4 +291,16 @@ RETT: Pestopasta | HANDLE: ingenting | BRUKER: pasta, pesto | ALT: pasta, pesto 
         val pesto = D.recipeFor(a, ds[1], ds)
         assertTrue(pesto.contains("Kok pasta") && !pesto.contains("Handleoversikt") && !pesto.contains("RETT:"))
     }
+
+    @Test fun productRanking() {
+        fun p(n: String, extra: String = "") = com.handleliste.app.data.Product(n, "", extra, 10.0, null, null)
+        val list = listOf(p("Truseinnlegg Normal First Price", "44stk"), p("Duopålegg First Price", "400g"),
+            p("Egg Frittgående S/M First Price", "18stk"), p("Egg Frittgående L/XL Prior", "10stk"), p("Gårdsegg", "12stk"))
+        val r = Parse.rankProducts("first price egg", list)
+        assertEquals("Egg Frittgående S/M First Price", r.first().name)
+        assertTrue(r.none { it.name.contains("Prior") || it.name == "Gårdsegg" })   // brand typed: must match
+        val e = Parse.rankProducts("egg", list).map { it.name }
+        assertEquals(listOf("Egg Frittgående S/M First Price", "Egg Frittgående L/XL Prior"), e.take(2))
+        assertTrue(e.indexOf("Gårdsegg") < e.indexOf("Truseinnlegg Normal First Price"))
+    }
 }

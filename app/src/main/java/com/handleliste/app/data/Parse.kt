@@ -327,6 +327,41 @@ object Parse {
         return null
     }
 
+    /**
+     * Orders products for a search the way a person would: every searched word must be there, a word
+     * that *is* the product ("Egg", "Egg Frittgående") beats one hidden inside another ("Truseinnlegg"),
+     * and a brand you typed ("first price") has to match.
+     */
+    fun rankProducts(query: String, products: List<Product>): List<Product> {
+        val words = query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 2 }
+        if (words.isEmpty()) return products
+        val split = Regex("[^\\p{L}\\p{N}]+")
+        fun score(p: Product): Int {
+            val title = p.name.lowercase()
+            val all = (p.name + " " + p.brand + " " + p.extra).lowercase()
+            val tw = title.split(split).filter { it.isNotBlank() }
+            val aw = all.split(split).filter { it.isNotBlank() }
+            var total = 0
+            for (w in words) {
+                total += when {
+                    tw.firstOrNull() == w -> 10                       // "Egg …"
+                    tw.any { it == w } -> 8
+                    aw.any { it == w } -> 6                           // brand words: first, price
+                    tw.any { it.startsWith(w) } -> 5                  // "eggerøre"
+                    aw.any { it.startsWith(w) } -> 3
+                    tw.firstOrNull()?.endsWith(w) == true -> 2        // "Gårdsegg"
+                    aw.any { it.endsWith(w) } -> 1                    // "Truseinnlegg": last
+                    else -> return -1
+                }
+            }
+            return total
+        }
+        val scored = products.map { it to score(it) }
+        val hits = scored.filter { it.second >= 0 }
+        // If nothing has every word, keep the store's own order rather than showing nothing.
+        return if (hits.isEmpty()) products else hits.sortedByDescending { it.second }.map { it.first }
+    }
+
     private val STOP = setOf("med", "og", "av", "til", "for", "smak", "uten", "the", "and", "with", "naturell", "pr", "per", "ca", "stk", "pakke", "pk")
 
     /** The words that identify a product: brand, kind and variant, without sizes and filler. */

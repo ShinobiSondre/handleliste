@@ -16,18 +16,19 @@ object Catalog {
         val q = query.trim().lowercase()
         if (q.length < 2) return emptyList()
         cache[q]?.let { return it }
-        val (meny, oda) = coroutineScope {
-            val m = async { runCatching { Parse.menyProducts(Http.get(
-                "https://platform-rest-prod.ngdata.no/api/episearch/1300/products?search=${Http.enc(q)}&page_size=30")) } }
+        // MENY, SPAR (same NorgesGruppen range as KIWI and Joker: First Price, Jacobs …) and Oda, in parallel.
+        fun ng(chain: Int, label: String) = "https://platform-rest-prod.ngdata.no/api/episearch/$chain/products?search=${Http.enc(q)}&page_size=40"
+        val (meny, spar, oda) = coroutineScope {
+            val m = async { runCatching { Parse.menyProducts(Http.get(ng(1300, "MENY"))) } }
+            val sp = async { runCatching { Parse.menyProducts(Http.get(ng(1210, "SPAR"))).map { it.copy(source = "SPAR", image = it.image?.replace("/meny/", "/kmh/"), imageLarge = it.imageLarge?.replace("/meny/", "/kmh/")) } } }
             val o = async { runCatching { Parse.odaProducts(Http.get("https://oda.com/api/v1/search/?q=${Http.enc(q)}")) } }
-            m.await() to o.await()
+            Triple(m.await(), sp.await(), o.await())
         }
-        if (meny.isFailure && oda.isFailure) throw (meny.exceptionOrNull() ?: Exception("offline"))
-        // Alternate between the two so both ranges show near the top; drop duplicates.
-        val a = meny.getOrDefault(emptyList()); val b = oda.getOrDefault(emptyList())
-        val merged = ArrayList<Product>()
-        for (i in 0 until maxOf(a.size, b.size)) { a.getOrNull(i)?.let { merged += it }; b.getOrNull(i)?.let { merged += it } }
-        val res = merged.distinctBy { Parse.keywords(it.name).sorted().joinToString(" ") + it.extra.lowercase() }
+        if (meny.isFailure && spar.isFailure && oda.isFailure) throw (meny.exceptionOrNull() ?: Exception("offline"))
+        val all = meny.getOrDefault(emptyList()) + spar.getOrDefault(emptyList()) + oda.getOrDefault(emptyList())
+        // Ranked here, so "first price egg" puts First Price eggs first, not "Truseinnlegg" or "Duopålegg".
+        val res = Parse.rankProducts(q, all)
+            .distinctBy { Parse.keywords(it.name).sorted().joinToString(" ") + it.extra.lowercase().replace(" ", "") }
         cache[q] = res
         return res
     }
