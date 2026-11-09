@@ -38,6 +38,21 @@ data class Shop(
     val isArea: Boolean,
 )
 
+/**
+ * What you specifically want for a list item: a product (with picture) or just a type ("pesto rosso").
+ * [keywords] decide which deals count for it.
+ */
+data class Pin(
+    val name: String,
+    val detail: String,
+    val image: String?,
+    val source: String, // "oda", "deal" or "type"
+    val keywords: List<String>,
+)
+
+/** A product from Oda's range (the picker's "all products"). */
+data class Product(val name: String, val brand: String, val extra: String, val price: Double?, val image: String?, val imageLarge: String?)
+
 /** Today's shelf price for a product at one chain (Kassalapp). */
 data class ChainPrice(val chain: String, val product: String, val price: Double, val image: String?)
 
@@ -203,7 +218,7 @@ object Parse {
      * Norwegian packs words together, so "melk" should find "Lettmelk", but a whole-word
      * match in the product name ranks above a match only in the small print.
      */
-    fun matchOffers(term: String, offers: List<Offer>, nowIso: String = ""): List<Offer> {
+    fun matchOffers(term: String, offers: List<Offer>, nowIso: String = "", limit: Int = 10, anyWord: Boolean = false): List<Offer> {
         val words = term.lowercase().split(" ").filter { it.length >= 2 }
         if (words.isEmpty()) return emptyList()
         fun score(o: Offer): Int {
@@ -216,6 +231,7 @@ object Parse {
                     head.endsWith(w) || head.split(Regex("[^\\p{L}]+")).any { it.endsWith(w) } -> 4 // lettMELK
                     head.contains(w) -> 2 // sjokoMELKdrikk
                     desc.contains(w) -> 1
+                    anyWord -> 0
                     else -> return 0 // every word must be there
                 }
             }
@@ -226,7 +242,53 @@ object Parse {
             .map { it to score(it) }.filter { it.second > 0 }
             .sortedWith(compareByDescending<Pair<Offer, Int>> { it.second }.thenBy { it.first.price })
             .map { it.first }.distinctBy { it.store + "|" + it.heading.lowercase() + "|" + it.price }
-            .take(10).toList()
+            .take(limit).toList()
+    }
+
+    fun odaProducts(json: String): List<Product> {
+        val arr = JSONObject(json).optJSONArray("products") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val p = arr.optJSONObject(i) ?: return@mapNotNull null
+            val img = p.optJSONArray("images")?.optJSONObject(0)
+            Product(
+                name = p.optString("full_name").ifBlank { p.optString("name") }.trim(),
+                brand = p.optString("brand").takeIf { it != "null" }.orEmpty(),
+                extra = p.optString("name_extra").takeIf { it != "null" }.orEmpty(),
+                price = p.optString("gross_price").toDoubleOrNull(),
+                image = img?.optJSONObject("thumbnail")?.optString("url")?.takeIf { it.startsWith("http") },
+                imageLarge = img?.optJSONObject("large")?.optString("url")?.takeIf { it.startsWith("http") },
+            )
+        }.filter { it.name.isNotBlank() }
+    }
+
+    private val STOP = setOf("med", "og", "av", "til", "for", "smak", "uten", "the", "and", "with", "naturell", "pr", "per", "ca", "stk", "pakke", "pk")
+
+    /** The words that identify a product: brand, kind and variant, without sizes and filler. */
+    fun keywords(text: String): List<String> =
+        text.lowercase().split(Regex("[^\\p{L}]+"))
+            .filter { it.length >= 3 && it !in STOP && it !in setOf("stk", "pakke", "gram", "liter") }
+            .distinct().take(6)
+
+    fun pinFromProduct(p: Product) = Pin(p.name, p.extra, p.image, "oda", keywords(p.name))
+
+    fun pinFromOffer(o: Offer): Pin {
+        // Flyers put the brand first in the small print: "Solvinge, 400 g, 112,25 pr. kg".
+        val brand = o.description.lines().firstOrNull { it.contains(",") }?.substringBefore(",")?.trim()
+            ?.takeIf { it.length in 2..30 }.orEmpty()
+        val name = o.heading.lowercase().replaceFirstChar { it.uppercase() }
+        return Pin(if (brand.isNotBlank()) "$brand $name" else name, o.store, o.image, "deal", keywords("$brand $name"))
+    }
+
+    fun pinFromType(text: String) = Pin(text.trim().replaceFirstChar { it.uppercase() }, "", null, "type", keywords(text))
+
+    /** Does this deal fit what you picked? Most of the picked product's words must be on the deal. */
+    fun pinMatches(pin: Pin, o: Offer): Boolean {
+        val words = pin.keywords
+        if (words.isEmpty()) return true
+        val hay = (o.heading + " " + o.description).lowercase()
+        val hits = words.count { hay.contains(it) }
+        val need = if (pin.source == "type") words.size else maxOf(1, Math.ceil(words.size * 0.6).toInt())
+        return hits >= need
     }
 
     /** Does a deal really belong to this list item? (Search results can be loose.) */

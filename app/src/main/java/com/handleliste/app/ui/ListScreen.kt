@@ -62,6 +62,10 @@ import com.handleliste.app.data.Deals
 import com.handleliste.app.data.Item
 import com.handleliste.app.data.ListRepo
 import com.handleliste.app.data.Settings
+import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.outlined.ImageSearch
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.handleliste.app.data.ShopList
 import com.handleliste.app.data.History
 import com.handleliste.app.data.Suggestion
@@ -339,6 +343,7 @@ private fun EmptyList() {
 @Composable
 fun ItemRow(item: Item, big: Boolean = false) {
     val deal = Deals.results.firstOrNull { it.item == item.name }?.offers?.minByOrNull { it.price }
+    val pin = item.pin
     Surface(
         Modifier.fillMaxWidth().padding(vertical = 3.dp).animateContentSize(),
         shape = RoundedCornerShape(14.dp),
@@ -346,10 +351,23 @@ fun ItemRow(item: Item, big: Boolean = false) {
         tonalElevation = if (item.checked) 0.dp else 1.dp,
     ) {
         Row(
-            Modifier.clickable { ListRepo.toggle(item.id) }.padding(start = 4.dp, end = 4.dp, top = if (big) 6.dp else 0.dp, bottom = if (big) 6.dp else 0.dp),
+            // In the list, tapping an item lets you choose exactly which product; in the store, it ticks it off.
+            Modifier.clickable { if (big) ListRepo.toggle(item.id) else PickerUi.itemId = item.id }
+                .padding(start = 4.dp, end = 4.dp, top = if (big) 6.dp else 0.dp, bottom = if (big) 6.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(checked = item.checked, onCheckedChange = { ListRepo.toggle(item.id) })
+            if (pin != null) {
+                Box(
+                    Modifier.size(if (big) 56.dp else 46.dp).clip(RoundedCornerShape(10.dp)).background(Color.White)
+                        .clickable { PickerUi.itemId = item.id },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (pin.image != null) AsyncImage(pin.image, pin.name, Modifier.fillMaxSize().padding(3.dp), contentScale = ContentScale.Fit)
+                    else Icon(Icons.AutoMirrored.Filled.Label, null, tint = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.width(10.dp))
+            }
             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
                 Text(
                     item.name, fontSize = if (big) 22.sp else 17.sp,
@@ -358,6 +376,10 @@ fun ItemRow(item: Item, big: Boolean = false) {
                     color = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
+                if (pin != null) {
+                    Text(pin.name + if (pin.detail.isNotBlank()) " · ${pin.detail}" else "", fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 if (deal != null && !item.checked) {
                     Text(
                         "🏷️ ${kr(deal.price)} · ${deal.store}",
@@ -365,8 +387,13 @@ fun ItemRow(item: Item, big: Boolean = false) {
                     )
                 }
             }
-            if (!big) IconButton(onClick = { ListRepo.remove(item.id) }) {
-                Icon(Icons.Filled.Close, tr("Remove", "Fjern"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!big) {
+                if (pin == null && !item.checked) IconButton(onClick = { PickerUi.itemId = item.id }) {
+                    Icon(Icons.Outlined.ImageSearch, tr("Choose product", "Velg vare"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { ListRepo.remove(item.id) }) {
+                    Icon(Icons.Filled.Close, tr("Remove", "Fjern"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }

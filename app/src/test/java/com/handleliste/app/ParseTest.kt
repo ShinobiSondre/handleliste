@@ -113,4 +113,36 @@ class ParseTest {
         assertTrue(!com.handleliste.app.data.Dinner.display(a).contains("HANDLE"))
         assertTrue(com.handleliste.app.data.Dinner.missing("**HANDLE:** ingenting").isEmpty())
     }
+
+    @Test fun pins() {
+        val fillet = offer("KYLLINGFILET", d = "Ytterøy, 950 g, 164,32 pr. kg", p = 149.0)
+        val wings = offer("KYLLINGVINGER/KLUBBER", "REMA 1000", 59.9, "Solvinge, 700-800 g")
+        val stekt = offer("KYLLINGFILET STEKT & SKIVET", d = "Solvinge, 200 g", p = 44.9)
+        val pesto = offer("BARILLA PESTO", "MENY", 29.9, "Rosso eller Genovese, 190 g")
+        val pestoG = offer("PESTO", "KIWI", 24.9, "Jacobs Utvalgte, Genovese, 185 g")
+
+        // Picked from Oda: Ytterøy fillet → only the Ytterøy deal counts, the others are "other chicken".
+        val p = Parse.pinFromProduct(com.handleliste.app.data.Product("Ytterøy Kyllingfilet naturell Saktevoksende kylling", "Ytterøy", "950 g", 156.2, null, null))
+        assertTrue(Parse.pinMatches(p, fillet))
+        assertTrue(!Parse.pinMatches(p, wings))
+        assertTrue(!Parse.pinMatches(p, stekt))
+
+        // Picked from a deal: the brand comes from the small print.
+        val fromDeal = Parse.pinFromOffer(stekt)
+        assertEquals("Solvinge Kyllingfilet stekt & skivet", fromDeal.name)
+        assertTrue(Parse.pinMatches(fromDeal, stekt))
+        assertTrue(!Parse.pinMatches(fromDeal, fillet))
+
+        // A type: every word must be there.
+        val rosso = Parse.pinFromType("pesto rosso")
+        assertTrue(Parse.pinMatches(rosso, pesto))
+        assertTrue(!Parse.pinMatches(rosso, pestoG))
+
+        val oda = """{"products":[{"full_name":"Barilla Pesto alla Genovese","brand":"Barilla","name_extra":"190 g","gross_price":"21.14",
+            "images":[{"large":{"url":"https://img/l.jpg"},"thumbnail":{"url":"https://img/t.jpg"}}]}]}"""
+        val prod = Parse.odaProducts(oda).single()
+        assertEquals("https://img/t.jpg", prod.image)
+        assertEquals(21.14, prod.price!!, 0.001)
+        assertEquals(listOf("barilla", "pesto", "alla", "genovese"), Parse.pinFromProduct(prod).keywords)
+    }
 }

@@ -30,6 +30,8 @@ import com.handleliste.app.data.ListRepo
 import com.handleliste.app.data.Settings
 import com.handleliste.app.ui.ChatUi
 import com.handleliste.app.ui.DealsScreen
+import com.handleliste.app.ui.PickerUi
+import com.handleliste.app.ui.ProductPicker
 import com.handleliste.app.ui.DinnerChat
 import com.handleliste.app.ui.DinnerScreen
 import com.handleliste.app.ui.HandlelisteTheme
@@ -59,12 +61,13 @@ class MainActivity : ComponentActivity() {
             HandlelisteTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 // Deals are checked by themselves: when the app opens and a moment after the lists change.
-                val openNames = ListRepo.open.map { it.name }.sorted().joinToString("|")
+                val openNames = ListRepo.open.map { it.name + "/" + it.pin?.name.orEmpty() }.sorted().joinToString("|")
                 LaunchedEffect(openNames) {
                     if (openNames.isNotEmpty()) { delay(1200); runDealsCheck(this@MainActivity) }
                 }
-                BackHandler(enabled = tab != 0 || StoreAlert.splash != null || ChatUi.open) {
+                BackHandler(enabled = tab != 0 || StoreAlert.splash != null || ChatUi.open || PickerUi.itemId != null) {
                     when {
+                        PickerUi.itemId != null -> PickerUi.itemId = null
                         ChatUi.open -> ChatUi.open = false
                         StoreAlert.splash != null -> StoreAlert.splash = null
                         else -> tab = 0
@@ -103,6 +106,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if (ChatUi.open) DinnerChat(onClose = { ChatUi.open = false })
                     InStoreSplash()
+                    ProductPicker()
                     UpdateOverlay()
                 }
             }

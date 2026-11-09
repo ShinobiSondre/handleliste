@@ -16,7 +16,16 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 /** Deals for one list item: flyer offers near you, plus (with a Kassalapp key) today's cheapest shelf price per chain. */
-data class ItemDeals(val item: String, val term: String, val offers: List<Offer>, val prices: List<ChainPrice>)
+data class ItemDeals(
+    val item: String, val term: String,
+    /** Deals on what you want (your chosen product or type, if you picked one). */
+    val offers: List<Offer>,
+    val prices: List<ChainPrice>,
+    /** What you picked, if anything. */
+    val pin: Pin? = null,
+    /** Other deals on the same kind of thing (e.g. other chicken), shown as suggestions. */
+    val others: List<Offer> = emptyList(),
+)
 
 /**
  * Finds discounts for what's on your list.
@@ -37,7 +46,7 @@ object Deals {
     /** Chains whose flyers were searched in the last check. */
     var chains by mutableStateOf<List<String>>(emptyList()); private set
 
-    suspend fun check(ctx: Context, items: List<String>, lat: Double?, lng: Double?, force: Boolean = false) {
+    suspend fun check(ctx: Context, items: List<Item>, lat: Double?, lng: Double?, force: Boolean = false) {
         if (loading) return
         if (items.isEmpty()) { results = emptyList(); error = null; return }
         loading = true
@@ -58,14 +67,20 @@ object Deals {
                 .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
             val gate = Semaphore(3)
             results = coroutineScope {
-                items.distinct().map { item ->
+                items.distinctBy { it.name.lowercase() }.map { item ->
                     async {
-                        val term = Parse.searchTerm(item)
-                        val offers = Parse.matchOffers(term, flyers, now)
+                        val term = Parse.searchTerm(item.name)
+                        val pin = item.pin
+                        // Everything of this kind on sale, then split by what you picked.
+                        val all = Parse.matchOffers(term, flyers, now, limit = 40) +
+                            (if (pin != null) Parse.matchOffers(pin.keywords.joinToString(" ").ifBlank { term }, flyers, now, limit = 40, anyWord = true) else emptyList())
+                        val kind = all.distinctBy { it.id }
+                        val mine = if (pin == null) kind.take(10) else kind.filter { Parse.pinMatches(pin, it) }.take(10)
+                        val others = if (pin == null) emptyList() else kind.filter { it !in mine && Parse.offerMatches(term, it) }.take(10)
                         val prices = if (kassal.isNotBlank()) gate.withPermit {
-                            runCatching { kassalPrices(term, kassal) }.getOrDefault(emptyList())
+                            runCatching { kassalPrices(pin?.keywords?.take(3)?.joinToString(" ") ?: term, kassal) }.getOrDefault(emptyList())
                         } else emptyList()
-                        ItemDeals(item, term, offers, prices)
+                        ItemDeals(item.name, term, mine, prices, pin, others)
                     }
                 }.awaitAll()
             }

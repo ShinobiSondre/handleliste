@@ -11,7 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-data class Item(val id: String, val name: String, val checked: Boolean = false, val added: Long = System.currentTimeMillis())
+data class Item(val id: String, val name: String, val checked: Boolean = false, val added: Long = System.currentTimeMillis(), val pin: Pin? = null)
 
 data class ShopList(val id: String, val name: String)
 
@@ -43,7 +43,7 @@ object ListRepo {
             val l = mutableStateListOf<Item>()
             if (arr != null) for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                l += Item(o.optString("id"), o.optString("name"), o.optBoolean("checked"), o.optLong("added"))
+                l += Item(o.optString("id"), o.optString("name"), o.optBoolean("checked"), o.optLong("added"), pinFrom(o.optJSONObject("pin")))
             }
             return l
         }
@@ -58,6 +58,7 @@ object ListRepo {
                 byList[meta.id] = items(l.optJSONArray("items"))
             }
             currentId = o.optString("current")
+            o.optJSONObject("pins")?.let { p -> p.keys().forEach { k -> pinFrom(p.optJSONObject(k))?.let { lastPins[k] = it } } }
         }
         if (lists.isEmpty()) {
             // First start, or moving from the one-list version: keep what was there.
@@ -75,12 +76,37 @@ object ListRepo {
         lists.forEach { meta ->
             val its = JSONArray()
             byList[meta.id].orEmpty().forEach {
-                its.put(JSONObject().put("id", it.id).put("name", it.name).put("checked", it.checked).put("added", it.added))
+                its.put(JSONObject().put("id", it.id).put("name", it.name).put("checked", it.checked).put("added", it.added)
+                    .put("pin", it.pin?.let { p -> pinJson(p) } ?: JSONObject.NULL))
             }
             arr.put(JSONObject().put("id", meta.id).put("name", meta.name).put("items", its))
         }
-        prefs().edit().putString("lists", JSONObject().put("lists", arr).put("current", currentId).toString()).apply()
+        val pins = JSONObject(); lastPins.forEach { (k, v) -> pins.put(k, pinJson(v)) }
+        prefs().edit().putString("lists", JSONObject().put("lists", arr).put("current", currentId).put("pins", pins).toString()).apply()
     }
+
+    /** Your last pick per item name, so "Pesto" comes back as your pesto next week. */
+    private val lastPins = HashMap<String, Pin>()
+
+    private fun pinJson(p: Pin) = JSONObject().put("name", p.name).put("detail", p.detail).put("image", p.image ?: "")
+        .put("source", p.source).put("kw", JSONArray(p.keywords))
+
+    private fun pinFrom(o: JSONObject?): Pin? {
+        o ?: return null
+        val kw = o.optJSONArray("kw") ?: JSONArray()
+        return Pin(o.optString("name"), o.optString("detail"), o.optString("image").takeIf { it.startsWith("http") },
+            o.optString("source"), (0 until kw.length()).map { kw.optString(it) })
+    }
+
+    /** Chooses (or clears, with null) the specific product or type for an item. */
+    fun setPin(id: String, pin: Pin?) {
+        val (l, i) = find(id) ?: return
+        l[i] = l[i].copy(pin = pin)
+        if (pin != null) lastPins[l[i].name.lowercase()] = pin else lastPins.remove(l[i].name.lowercase())
+        save()
+    }
+
+    fun item(id: String): Item? = find(id)?.let { (l, i) -> l[i] }
 
     // ---- lists ----
 
@@ -123,7 +149,7 @@ object ListRepo {
         Parse.splitItems(text).forEach { name ->
             val i = target.indexOfFirst { it.name.equals(name, true) }
             if (i >= 0) target[i] = target[i].copy(checked = false) // already there: just un-tick it
-            else target.add(0, Item(UUID.randomUUID().toString(), name))
+            else target.add(0, Item(UUID.randomUUID().toString(), name, pin = lastPins[name.lowercase()]))
             History.added(app, name)
         }
         save()

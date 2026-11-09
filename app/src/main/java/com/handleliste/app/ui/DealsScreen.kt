@@ -1,6 +1,9 @@
 package com.handleliste.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -78,17 +81,23 @@ import java.util.Locale
 /** Starts a deals check for everything not yet ticked off. */
 suspend fun runDealsCheck(ctx: android.content.Context, force: Boolean = false) {
     val loc = currentLocation(ctx)
-    Deals.check(ctx, ListRepo.open.map { it.name }, loc?.first, loc?.second, force)
+    Deals.check(ctx, ListRepo.open, loc?.first, loc?.second, force)
 }
 
 @Composable
 fun DealsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val results = Deals.results
     var zoom by remember { mutableStateOf<Offer?>(null) }
-    // Tabs: everything, then one per store that has deals on your list (most first).
-    val stores = Deals.bestStores()
+    // First row (with several lists): all lists, or one list. Second row: all stores, or one store.
+    var listTab by rememberSaveable { mutableStateOf("") }
+    if (listTab.isNotEmpty() && ListRepo.lists.none { it.id == listTab }) listTab = ""
+    val results = if (listTab.isEmpty()) Deals.results else {
+        val names = ListRepo.itemsOf(listTab).filter { !it.checked }.map { it.name.lowercase() }.toSet()
+        Deals.results.filter { it.item.lowercase() in names }
+    }
+    val stores = results.flatMap { d -> d.offers.map { it.store }.distinct() }.groupingBy { it }.eachCount()
+        .toList().sortedByDescending { it.second }
     var tab by rememberSaveable { mutableStateOf("") }
     if (tab.isNotEmpty() && stores.none { it.first == tab }) tab = ""
 
@@ -112,6 +121,13 @@ fun DealsScreen() {
             if (Deals.loading) {
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
+            }
+        }
+        if (ListRepo.lists.size > 1) {
+            Spacer(Modifier.height(8.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { ListTab(tr("All lists", "Alle lister"), listTab == "") { listTab = "" } }
+                items(ListRepo.lists, key = { it.id }) { l -> ListTab(l.name, listTab == l.id) { listTab = l.id } }
             }
         }
         if (stores.isNotEmpty()) {
@@ -141,7 +157,7 @@ fun DealsScreen() {
             if (tab.isEmpty()) {
                 items(results.sortedByDescending { it.offers.size }, key = { it.item }) { ItemDealsCard(it) { o -> zoom = o } }
             } else {
-                val here = Deals.atStore(tab)
+                val here = results.flatMap { d -> d.offers.filter { it.store == tab }.map { d.item to it } }
                 item {
                     Text(tr("${here.map { it.first }.distinct().size} of your items on sale at $tab", "${here.map { it.first }.distinct().size} av varene dine på tilbud hos $tab"),
                         style = MaterialTheme.typography.titleMedium)
@@ -178,6 +194,20 @@ fun DealsScreen() {
         }
     }
     zoom?.let { OfferImageViewer(it) { zoom = null } }
+}
+
+@Composable
+private fun ListTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick, shape = RoundedCornerShape(10.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.AutoMirrored.Filled.List, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+            Text(label, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+        }
+    }
 }
 
 @Composable
@@ -248,10 +278,21 @@ private fun Note(text: String) {
 
 @Composable
 private fun ItemDealsCard(d: ItemDeals, onImage: (Offer) -> Unit) {
+    var showOthers by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(vertical = 12.dp)) {
             Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(d.item, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                d.pin?.let { p ->
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(Color.White), contentAlignment = Alignment.Center) {
+                        if (p.image != null) AsyncImage(p.image, null, Modifier.fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+                        else Icon(Icons.AutoMirrored.Filled.Label, null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(d.item, style = MaterialTheme.typography.titleMedium)
+                    d.pin?.let { Text(tr("Only: ", "Bare: ") + it.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
                 if (d.offers.isNotEmpty()) {
                     Box(Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.secondary).padding(horizontal = 8.dp, vertical = 2.dp)) {
                         Text(tr("${d.offers.size} deals", "${d.offers.size} tilbud"), color = MaterialTheme.colorScheme.onSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -259,12 +300,22 @@ private fun ItemDealsCard(d: ItemDeals, onImage: (Offer) -> Unit) {
                 }
             }
             if (d.offers.isEmpty()) {
-                Text(tr("No deals this week", "Ingen tilbud denne uken"), color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+                Text(if (d.pin != null) tr("No deals on your choice this week", "Ingen tilbud på det du har valgt denne uken")
+                    else tr("No deals this week", "Ingen tilbud denne uken"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
             }
             d.offers.take(5).forEachIndexed { i, o ->
                 if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 OfferRow(o) { onImage(o) }
+            }
+            if (d.others.isNotEmpty()) {
+                TextButton(onClick = { showOthers = !showOthers }, modifier = Modifier.padding(horizontal = 4.dp)) {
+                    Text((if (showOthers) "▾ " else "▸ ") + tr("Other ${d.term} on sale (${d.others.size})", "Andre tilbud på ${d.term} (${d.others.size})"))
+                }
+                if (showOthers) d.others.take(8).forEachIndexed { i, o ->
+                    if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    OfferRow(o) { onImage(o) }
+                }
             }
             if (d.prices.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))

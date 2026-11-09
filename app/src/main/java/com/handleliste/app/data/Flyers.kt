@@ -94,5 +94,8 @@ object Flyers {
         return offers
     }
 
+    /** This week's offers already on the phone (for the product picker). */
+    fun cached(ctx: Context): List<Offer> { load(ctx); return offers }
+
     val chains: List<String> get() = offers.map { it.store }.distinct().sorted()
 }
