@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
             .crossfade(true)
             .build())
         ListRepo.init(this)
+        com.handleliste.app.data.DinnerPrefs.init(this)
         StoreAlert.channels(this)
         enableEdgeToEdge()
         handle(intent)

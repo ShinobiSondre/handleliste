@@ -303,4 +303,12 @@ RETT: Pestopasta | HANDLE: ingenting | BRUKER: pasta, pesto | ALT: pasta, pesto 
         assertEquals(listOf("Egg Frittgående S/M First Price", "Egg Frittgående L/XL Prior"), e.take(2))
         assertTrue(e.indexOf("Gårdsegg") < e.indexOf("Truseinnlegg Normal First Price"))
     }
+
+    @Test fun dinnerVariety() {
+        val p = com.handleliste.app.data.Dinner.prompt(listOf("Kylling"), "", emptyList(), "Vegansk, Rask (under 30 min)", listOf("Tacogryte", "Pestopasta"))
+        assertTrue(p.contains("Vegansk, Rask (under 30 min)"))
+        assertTrue(p.contains("Tacogryte; Pestopasta"))
+        val b = com.handleliste.app.data.Dinner.budgetPrompt(100, 2, emptyList(), "", emptyList(), "", listOf("Kyllingwok"))
+        assertTrue(b.contains("Kyllingwok"))
+    }
 }

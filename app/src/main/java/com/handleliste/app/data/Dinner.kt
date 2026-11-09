@@ -10,14 +10,15 @@ object Dinner {
     /** ChatGPT is asked to end with this line, so the missing groceries become a button. */
     private val BUY_LINE = Regex("(?im)^\\W*(HANDLE|KJØP|BUY)[*\\s]*:[*\\s]*(.+)$")
 
-    fun prompt(list: List<String>, extra: String, onSale: List<String>, wishes: String): String {
+    fun prompt(list: List<String>, extra: String, onSale: List<String>, wishes: String, avoid: List<String> = emptyList()): String {
         val b = StringBuilder()
         if (Lang.no) {
             b.append("Hva kan jeg lage til middag? Foreslå 3 middager, mest mulig laget av det jeg skal handle.\n")
             b.append("Handlelisten min: ${list.joinToString(", ").ifBlank { "(tom)" }}\n")
             if (extra.isNotBlank()) b.append("Dette har jeg hjemme fra før: $extra\n")
             if (onSale.isNotEmpty()) b.append("På tilbud nær meg denne uken (bruk gjerne): ${onSale.joinToString(", ")}\n")
-            if (wishes.isNotBlank()) b.append("Ønsker: $wishes\n")
+            if (wishes.isNotBlank()) b.append("Dette er viktig for meg, følg det: $wishes\n")
+            if (avoid.isNotEmpty()) b.append("Jeg har nylig fått disse forslagene, så foreslå noe annet enn dem (og varier gjerne kjøkken, f.eks. norsk, italiensk, asiatisk, indisk, meksikansk): ${avoid.joinToString("; ")}\n")
             b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Svar på norsk, kort og oversiktlig: " +
                 "navn på retten, tid, hvorfor den passer, og en enkel oppskrift med ingredienser og fremgangsmåte for hver.\n")
             b.append("Gi hver rett en kort overskrift med navnet. Avslutt svaret med én linje per rett, nøyaktig slik: " +
@@ -28,7 +29,8 @@ object Dinner {
             b.append("My shopping list: ${list.joinToString(", ").ifBlank { "(empty)" }}\n")
             if (extra.isNotBlank()) b.append("Already at home: $extra\n")
             if (onSale.isNotEmpty()) b.append("On sale near me this week (use if it fits): ${onSale.joinToString(", ")}\n")
-            if (wishes.isNotBlank()) b.append("Wishes: $wishes\n")
+            if (wishes.isNotBlank()) b.append("This matters to me, follow it: $wishes\n")
+            if (avoid.isNotEmpty()) b.append("I was recently suggested these, so suggest something different (and vary the cuisine, e.g. Nordic, Italian, Asian, Indian, Mexican): ${avoid.joinToString("; ")}\n")
             b.append("Assume I have salt, pepper, oil, butter and common spices. Keep it short and clear: " +
                 "dish name, time, why it fits, and a simple recipe with ingredients and steps for each.\n")
             b.append("Give each dish a short heading with its name. End the answer with one line per dish, exactly like this: " +
@@ -39,7 +41,7 @@ object Dinner {
     }
 
     /** "Make me dinner for 100 kr": real prices near you this week, so the plan can actually be bought. */
-    fun budgetPrompt(budget: Int, servings: Int, list: List<String>, extra: String, deals: List<String>, wishes: String): String {
+    fun budgetPrompt(budget: Int, servings: Int, list: List<String>, extra: String, deals: List<String>, wishes: String, avoid: List<String> = emptyList()): String {
         val b = StringBuilder()
         if (Lang.no) {
             b.append("Lag en middag til $servings ${if (servings == 1) "person" else "personer"} som koster maks $budget kr totalt å handle inn.\n")
@@ -50,7 +52,8 @@ object Dinner {
             if (list.isNotEmpty()) b.append("Dette står på handlelisten min og skal kjøpes uansett: ${list.joinToString(", ")}. " +
                 "Bruk gjerne disse varene, men de er IKKE gratis: prisen på varene fra handlelisten som middagen bruker, må telles med i totalen.\n")
             if (extra.isNotBlank()) b.append("Dette har jeg hjemme fra før (koster ingenting): $extra\n")
-            if (wishes.isNotBlank()) b.append("Ønsker: $wishes\n")
+            if (wishes.isNotBlank()) b.append("Dette er viktig for meg, følg det: $wishes\n")
+            if (avoid.isNotEmpty()) b.append("Jeg har nylig fått disse forslagene, så foreslå noe annet enn dem (og varier gjerne kjøkken, f.eks. norsk, italiensk, asiatisk, indisk, meksikansk): ${avoid.joinToString("; ")}\n")
             b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Tell med hele pakninger slik de selges i butikken. " +
                 "Foreslå 1 middag (og gjerne 1 billigere reserve). Vis en kort handleliste med pris per vare og butikk, totalsum, og en enkel oppskrift. " +
                 "Bruk norske priser for 2025–2026 der tilbudene ikke dekker det. Hold deg under $budget kr. Svar på norsk.\n")
@@ -67,7 +70,8 @@ object Dinner {
             if (list.isNotEmpty()) b.append("On my shopping list, to be bought anyway: ${list.joinToString(", ")}. " +
                 "Use them if they fit, but they are NOT free: the price of the list items the dinner uses must be counted in the total.\n")
             if (extra.isNotBlank()) b.append("Already at home (free): $extra\n")
-            if (wishes.isNotBlank()) b.append("Wishes: $wishes\n")
+            if (wishes.isNotBlank()) b.append("This matters to me, follow it: $wishes\n")
+            if (avoid.isNotEmpty()) b.append("I was recently suggested these, so suggest something different (and vary the cuisine, e.g. Nordic, Italian, Asian, Indian, Mexican): ${avoid.joinToString("; ")}\n")
             b.append("Assume I have salt, pepper, oil, butter and common spices. Count whole packs as sold in Norwegian stores. " +
                 "Suggest 1 dinner (and maybe 1 cheaper backup). Show a short shopping list with price per item and store, the total, and a simple recipe. " +
                 "Use Norwegian 2025–2026 prices where the deals don't cover it. Stay under $budget NOK.\n")

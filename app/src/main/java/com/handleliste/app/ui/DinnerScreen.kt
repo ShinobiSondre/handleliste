@@ -122,6 +122,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import com.handleliste.app.data.Deals
 import com.handleliste.app.data.Dinner
+import com.handleliste.app.data.DinnerPrefs
 import com.handleliste.app.data.ListRepo
 import com.handleliste.app.util.tr
 
@@ -131,11 +132,8 @@ fun DinnerScreen() {
     val ctx = LocalContext.current
     var extra by rememberSaveable { mutableStateOf("") }
     var useDeals by rememberSaveable { mutableStateOf(true) }
-    val wishes = remember { mutableStateListOf<String>() }
-    val wishOptions = listOf(
-        tr("Quick (under 30 min)", "Rask (under 30 min)"), tr("Vegetarian", "Vegetar"), tr("Kid-friendly", "Barnevennlig"),
-        tr("Cheap", "Billig"), tr("Healthy", "Sunn"), tr("Cosy / comfort food", "Kos / hverdagsfavoritt"),
-    )
+    LaunchedEffect(Unit) { DinnerPrefs.init(ctx) }
+    val wishes = DinnerPrefs.words(com.handleliste.app.util.Lang.no)
     val turns by ChatGptBridge.turns.collectAsState()
     // Warm ChatGPT up in the background while you choose, so the answer comes faster.
     LaunchedEffect(Unit) { (ctx as? Activity)?.let { ChatGptBridge.prewarm(it) } }
@@ -147,7 +145,7 @@ fun DinnerScreen() {
     fun ask() {
         val list = ChatUi.items().map { it.name }
         val onSale = if (useDeals) Deals.results.filter { it.offers.isNotEmpty() }.map { it.item } else emptyList()
-        val prompt = Dinner.prompt(list, extra, onSale, wishes.joinToString(", "))
+        val prompt = Dinner.prompt(list, extra, onSale, wishes.joinToString(", "), DinnerPrefs.recent(ctx))
         val shown = tr("What can I make for dinner?", "Hva kan jeg lage til middag?") +
             (if (list.isNotEmpty()) "\n" + list.joinToString(", ") else "") +
             (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "")
@@ -170,7 +168,7 @@ fun DinnerScreen() {
             preparing = false
         }
         val deals = withContext(Dispatchers.Default) { Prices.dinnerDeals(ctx).map { Prices.dealLine(it) } }
-        val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ChatUi.items().map { it.name }, extra, deals, wishes.joinToString(", "))
+        val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ChatUi.items().map { it.name }, extra, deals, wishes.joinToString(", "), DinnerPrefs.recent(ctx))
         val shown = tr("Make me dinner for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "people"}",
             "Lag middag for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
             (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
@@ -239,9 +237,13 @@ fun DinnerScreen() {
             shape = RoundedCornerShape(14.dp)
         )
         Spacer(Modifier.height(10.dp))
+        Text(tr("What do you feel like? (remembered)", "Hva har du lyst på? (huskes)"), fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 4.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            wishOptions.forEach { w ->
-                FilterChip(selected = w in wishes, onClick = { if (w in wishes) wishes.remove(w) else wishes.add(w) }, label = { Text(w) })
+            DinnerPrefs.CHOICES.forEach { c ->
+                val on = c.id in DinnerPrefs.chosen
+                FilterChip(selected = on, onClick = { DinnerPrefs.toggle(ctx, c.id) }, label = { Text(tr(c.en, c.no)) },
+                    leadingIcon = if (on) ({ Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }) else null)
             }
         }
         if (Deals.results.any { it.offers.isNotEmpty() }) {
@@ -352,6 +354,12 @@ fun DinnerChat(onClose: () -> Unit) {
                 if (ChatUi.budget != null && (missing.isNotEmpty() || fromList.isNotEmpty())) add(ChatEntry.Price(i, missing, fromList))
                 if (missing.isNotEmpty()) add(ChatEntry.Add(i, missing))
             }
+        }
+    }
+    // Remember what ChatGPT suggested, so next time it's asked for something different.
+    LaunchedEffect(status, turns.size) {
+        if (status == ChatGptBridge.Status.DONE) turns.lastOrNull()?.takeIf { !it.user }?.let { t ->
+            DinnerPrefs.remember(ctx, Dinner.dishes(t.text).map { it.name })
         }
     }
     LaunchedEffect(shown.size, status) {
