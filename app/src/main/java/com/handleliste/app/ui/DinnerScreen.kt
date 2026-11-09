@@ -399,7 +399,7 @@ fun DinnerChat(onClose: () -> Unit) {
                 items(entries, key = { it.key }) { e ->
                     when (e) {
                         is ChatEntry.Msg -> Bubble(e.text, mine = e.user)
-                        is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget ?: 0)
+                        is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget)
                         is ChatEntry.Add -> AddMissing(e.items)
                         is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames, e.answer)
                     }
@@ -454,7 +454,7 @@ fun DinnerChat(onClose: () -> Unit) {
  * dinner uses from your shopping lists counts too, so the total is what the whole dinner costs.
  */
 @Composable
-private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int) {
+private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int?) {
     val ctx = LocalContext.current
     var lines by remember(extra, fromList) { mutableStateOf<Pair<List<PriceLine>, List<PriceLine>>?>(null) }
     LaunchedEffect(extra, fromList) {
@@ -463,7 +463,7 @@ private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int)
     }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Text(tr("Price check, today's prices", "Prissjekk med dagens priser"), fontWeight = FontWeight.Bold)
+            Text(tr("Price check, the app's prices today", "Prissjekk med appens priser i dag"), fontWeight = FontWeight.Bold)
             val l = lines
             if (l == null) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
@@ -497,17 +497,21 @@ private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int)
                 val total = all.sumOf { it.price ?: 0.0 }
                 val unknown = all.count { it.price == null }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                val ok = budget == null || total <= budget
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(tr("Whole dinner", "Hele middagen") + if (unknown > 0) tr(" (+$unknown unknown)", " (+$unknown ukjent)") else "",
                         fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Text(kr(total), fontWeight = FontWeight.Black, fontSize = 18.sp,
-                        color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                        color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 }
-                Text(
-                    if (total <= budget) tr("✓ Under your $budget kr", "✓ Under budsjettet på $budget kr")
+                if (budget != null) Text(
+                    if (ok) tr("✓ Under your $budget kr", "✓ Under budsjettet på $budget kr")
                     else tr("Over your $budget kr. Ask for something cheaper below.", "Over budsjettet på $budget kr. Be om noe billigere under."),
-                    fontSize = 12.sp, color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    fontSize = 12.sp, color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
+                val deals = all.count { it.onSale }
+                if (deals > 0) Text(tr("🏷️ $deals of the ingredients are on sale near you this week", "🏷️ $deals av ingrediensene er på tilbud nær deg denne uken"),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
                 Text(tr("Whole packs, incl. what you use from your list. Deals near you, otherwise the normal store price (MENY or Oda).",
                     "Hele pakninger, inkludert det du bruker fra listen. Tilbud nær deg, ellers vanlig butikkpris (MENY eller Oda)."),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -526,6 +530,9 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (dishes.size > 1) Text(tr("Which one do you want? Tap a dish", "Hvilken vil du lage? Trykk på en rett"),
             fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text(tr("Prices for the dish you pick come from the app (this week's deals near you), not ChatGPT's guesses in the text.",
+            "Prisene for retten du velger kommer fra appen (ukens tilbud nær deg), ikke ChatGPTs anslag i teksten."),
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             itemsIndexed(dishes) { j, d -> DishCard(d, selected = j == picked) { ChatUi.pickedDish[turn] = j } }
         }
@@ -533,7 +540,12 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
             val d = dishes.getOrNull(picked) ?: return@AnimatedVisibility
             val fromList = Dinner.usesFromList(d, listNames)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (ChatUi.budget != null && (d.buy.isNotEmpty() || fromList.isNotEmpty())) PriceCheck(d.buy, fromList, ChatUi.budget ?: 0)
+                // The app's own prices (this week's deals near you, else the normal store price) for every
+                // ingredient, not ChatGPT's guesses: split into what's on your list and what to buy.
+                val everything = Dinner.ingredientsForList(d, listNames)
+                val onList = everything.filter { it in listNames }
+                val extra = everything.filter { it !in listNames }
+                if (everything.isNotEmpty()) PriceCheck(extra, onList, ChatUi.budget)
                 if (d.buy.isNotEmpty()) AddMissing(d.buy, d.name)
                 else Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                     Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
