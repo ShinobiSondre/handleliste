@@ -1,70 +1,159 @@
 package com.handleliste.app.data
 
 import android.content.Context
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import com.handleliste.app.util.Lang
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
 data class Item(val id: String, val name: String, val checked: Boolean = false, val added: Long = System.currentTimeMillis())
 
-/** The shopping list, saved on the phone. Shared by the screens and the store watcher. */
+data class ShopList(val id: String, val name: String)
+
+/**
+ * Your shopping lists (Handleliste, Middag, Hytta …), saved on the phone.
+ * [items] is the list on screen; the store pop-up and deals use what's open on all lists.
+ */
 object ListRepo {
-    val items = mutableStateListOf<Item>()
+    val lists = mutableStateListOf<ShopList>()
+    private val byList = HashMap<String, SnapshotStateList<Item>>()
+    var currentId by mutableStateOf("")
+        private set
     private var loaded = false
     private lateinit var app: Context
 
     private fun prefs() = app.getSharedPreferences("list", Context.MODE_PRIVATE)
 
+    /** The list shown right now. */
+    val items: SnapshotStateList<Item> get() = byList.getOrPut(currentId) { mutableStateListOf() }
+    val current: ShopList? get() = lists.firstOrNull { it.id == currentId }
+
+    fun itemsOf(listId: String): List<Item> = byList[listId].orEmpty()
+
     @Synchronized
     fun init(ctx: Context) {
         if (loaded) return
         app = ctx.applicationContext
-        val arr = runCatching { JSONArray(prefs().getString("items", "[]")) }.getOrDefault(JSONArray())
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            items += Item(o.optString("id"), o.optString("name"), o.optBoolean("checked"), o.optLong("added"))
+        fun items(arr: JSONArray?): SnapshotStateList<Item> {
+            val l = mutableStateListOf<Item>()
+            if (arr != null) for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                l += Item(o.optString("id"), o.optString("name"), o.optBoolean("checked"), o.optLong("added"))
+            }
+            return l
         }
+        val saved = prefs().getString("lists", null)
+        if (saved != null) runCatching {
+            val o = JSONObject(saved)
+            val arr = o.getJSONArray("lists")
+            for (i in 0 until arr.length()) {
+                val l = arr.getJSONObject(i)
+                val meta = ShopList(l.getString("id"), l.getString("name"))
+                lists += meta
+                byList[meta.id] = items(l.optJSONArray("items"))
+            }
+            currentId = o.optString("current")
+        }
+        if (lists.isEmpty()) {
+            // First start, or moving from the one-list version: keep what was there.
+            val first = ShopList(UUID.randomUUID().toString(), if (Lang.no) "Handleliste" else "Groceries")
+            lists += first
+            byList[first.id] = items(runCatching { JSONArray(prefs().getString("items", "[]")) }.getOrNull())
+        }
+        if (lists.none { it.id == currentId }) currentId = lists.first().id
         loaded = true
+        save()
     }
 
     private fun save() {
         val arr = JSONArray()
-        items.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name).put("checked", it.checked).put("added", it.added)) }
-        prefs().edit().putString("items", arr.toString()).apply()
+        lists.forEach { meta ->
+            val its = JSONArray()
+            byList[meta.id].orEmpty().forEach {
+                its.put(JSONObject().put("id", it.id).put("name", it.name).put("checked", it.checked).put("added", it.added))
+            }
+            arr.put(JSONObject().put("id", meta.id).put("name", meta.name).put("items", its))
+        }
+        prefs().edit().putString("lists", JSONObject().put("lists", arr).put("current", currentId).toString()).apply()
     }
 
-    val open: List<Item> get() = items.filter { !it.checked }
+    // ---- lists ----
 
-    fun add(text: String) {
-        val existing = items.map { it.name.lowercase() }.toSet()
+    fun select(id: String) { if (lists.any { it.id == id }) { currentId = id; save() } }
+
+    fun newList(name: String): String {
+        val meta = ShopList(UUID.randomUUID().toString(), name.trim().ifBlank { if (Lang.no) "Ny liste" else "New list" })
+        lists += meta
+        byList[meta.id] = mutableStateListOf()
+        currentId = meta.id
+        save()
+        return meta.id
+    }
+
+    fun renameList(id: String, name: String) {
+        val i = lists.indexOfFirst { it.id == id }
+        if (i >= 0 && name.isNotBlank()) { lists[i] = lists[i].copy(name = name.trim()); save() }
+    }
+
+    fun deleteList(id: String) {
+        if (lists.size <= 1) return
+        val i = lists.indexOfFirst { it.id == id }
+        if (i < 0) return
+        lists.removeAt(i); byList.remove(id)
+        if (currentId == id) currentId = lists[(i - 1).coerceAtLeast(0)].id
+        save()
+    }
+
+    // ---- items (on the list shown, unless a list is given) ----
+
+    /** Not yet bought, on every list. */
+    val open: List<Item> get() = lists.flatMap { byList[it.id].orEmpty() }.filter { !it.checked }
+
+    /** Open items grouped by list, for the in-store screen. */
+    fun openByList(): List<Pair<ShopList, List<Item>>> =
+        lists.map { it to byList[it.id].orEmpty().filter { i -> !i.checked } }.filter { it.second.isNotEmpty() }
+
+    fun add(text: String, listId: String = currentId) {
+        val target = byList.getOrPut(listId) { mutableStateListOf() }
         Parse.splitItems(text).forEach { name ->
-            if (name.lowercase() in existing) {
-                // Already on the list: just un-tick it.
-                val i = items.indexOfFirst { it.name.equals(name, true) }
-                if (i >= 0) items[i] = items[i].copy(checked = false)
-            } else {
-                items.add(0, Item(UUID.randomUUID().toString(), name))
-            }
+            val i = target.indexOfFirst { it.name.equals(name, true) }
+            if (i >= 0) target[i] = target[i].copy(checked = false) // already there: just un-tick it
+            else target.add(0, Item(UUID.randomUUID().toString(), name))
+            History.added(app, name)
         }
         save()
     }
 
-    fun toggle(id: String) {
-        val i = items.indexOfFirst { it.id == id }
-        if (i >= 0) { items[i] = items[i].copy(checked = !items[i].checked); save() }
+    private fun find(id: String): Pair<SnapshotStateList<Item>, Int>? {
+        for (l in byList.values) { val i = l.indexOfFirst { it.id == id }; if (i >= 0) return l to i }
+        return null
     }
 
-    fun remove(id: String) { items.removeAll { it.id == id }; save() }
+    fun toggle(id: String) {
+        val (l, i) = find(id) ?: return
+        val now = !l[i].checked
+        l[i] = l[i].copy(checked = now)
+        if (now) History.bought(app, l[i].name) else History.unbought(app, l[i].name)
+        save()
+    }
+
+    fun remove(id: String) { val (l, i) = find(id) ?: return; l.removeAt(i); save() }
 
     fun rename(id: String, name: String) {
-        val i = items.indexOfFirst { it.id == id }
-        if (i >= 0 && name.isNotBlank()) { items[i] = items[i].copy(name = name.trim()); save() }
+        val (l, i) = find(id) ?: return
+        if (name.isNotBlank()) { l[i] = l[i].copy(name = name.trim()); save() }
     }
 
-    fun clearChecked() { items.removeAll { it.checked }; save() }
-
-    fun restore(item: Item) { if (items.none { it.id == item.id }) { items.add(0, item); save() } }
+    /** Clears ticked items from the list shown (or from every list, after shopping). */
+    fun clearChecked(all: Boolean = false) {
+        if (all) byList.values.forEach { l -> l.removeAll { it.checked } } else items.removeAll { it.checked }
+        save()
+    }
 }
 
 /** Small settings, saved on the phone. API keys never leave the phone except to their own service. */

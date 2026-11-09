@@ -22,13 +22,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.handleliste.app.data.ListRepo
 import com.handleliste.app.data.Settings
+import com.handleliste.app.ui.ChatUi
 import com.handleliste.app.ui.DealsScreen
+import com.handleliste.app.ui.DinnerChat
 import com.handleliste.app.ui.DinnerScreen
 import com.handleliste.app.ui.HandlelisteTheme
 import com.handleliste.app.ui.InStoreSplash
@@ -42,7 +44,7 @@ import com.handleliste.app.util.Lang
 import com.handleliste.app.util.tr
 import com.handleliste.app.watch.StoreAlert
 import com.handleliste.app.watch.StoreWatchService
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,9 +58,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             HandlelisteTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
-                val scope = rememberCoroutineScope()
-                BackHandler(enabled = tab != 0 || StoreAlert.splash != null) {
-                    if (StoreAlert.splash != null) StoreAlert.splash = null else tab = 0
+                // Deals are checked by themselves: when the app opens and a moment after the lists change.
+                val openNames = ListRepo.open.map { it.name }.sorted().joinToString("|")
+                LaunchedEffect(openNames) {
+                    if (openNames.isNotEmpty()) { delay(1200); runDealsCheck(this@MainActivity) }
+                }
+                BackHandler(enabled = tab != 0 || StoreAlert.splash != null || ChatUi.open) {
+                    when {
+                        ChatUi.open -> ChatUi.open = false
+                        StoreAlert.splash != null -> StoreAlert.splash = null
+                        else -> tab = 0
+                    }
                 }
                 Box(Modifier.fillMaxSize()) {
                     Scaffold(
@@ -81,7 +91,7 @@ class MainActivity : ComponentActivity() {
                         Box(Modifier.padding(pad)) {
                             when (tab) {
                                 0 -> ListScreen(
-                                    onCheckDeals = { tab = 1; scope.launch { runDealsCheck(this@MainActivity) } },
+                                    onOpenDeals = { tab = 1 },
                                     onDinner = { tab = 2 },
                                     onSettings = { tab = 3 },
                                 )
@@ -91,6 +101,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    if (ChatUi.open) DinnerChat(onClose = { ChatUi.open = false })
                     InStoreSplash()
                     UpdateOverlay()
                 }

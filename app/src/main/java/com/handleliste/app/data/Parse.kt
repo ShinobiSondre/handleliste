@@ -21,6 +21,7 @@ data class Offer(
     val runTill: String,
     val image: String?,
     val runFrom: String = "",
+    val imageLarge: String? = null,
 ) {
     val savingsPct: Int? get() = prePrice?.takeIf { it > price }?.let { (((it - price) / it) * 100).toInt() }
 }
@@ -75,6 +76,8 @@ object Parse {
                 currency = pricing.optString("currency", "NOK").ifBlank { "NOK" },
                 runTill = o.optString("run_till"),
                 runFrom = o.optString("run_from"),
+                imageLarge = images?.optString("zoom")?.takeIf { it.startsWith("http") }
+                    ?: images?.optString("view")?.takeIf { it.startsWith("http") },
                 image = images?.optString("thumb")?.takeIf { it.startsWith("http") }
                     ?: images?.optString("view")?.takeIf { it.startsWith("http") },
             )

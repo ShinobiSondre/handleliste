@@ -61,8 +61,9 @@ fun InStoreSplash() {
     }
     AnimatedVisibility(store != null, enter = fadeIn() + slideInVertically { it / 6 }, exit = fadeOut() + slideOutVertically { it / 6 }) {
         val name = store.orEmpty()
-        val open = ListRepo.items.filter { !it.checked }
-        val done = ListRepo.items.filter { it.checked }
+        val groups = ListRepo.openByList()
+        val open = groups.flatMap { it.second }
+        val done = ListRepo.lists.flatMap { ListRepo.itemsOf(it.id) }.filter { it.checked }
         val here = Deals.atStore(name)
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Box(
@@ -101,7 +102,13 @@ fun InStoreSplash() {
                         }
                     }
                 }
-                items(open, key = { it.id }) { ItemRow(it, big = true) }
+                groups.forEach { (list, its) ->
+                    if (groups.size > 1) item(key = "h-" + list.id) {
+                        Text(list.name, Modifier.padding(top = 10.dp, bottom = 2.dp), style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    items(its, key = { it.id }) { ItemRow(it, big = true) }
+                }
                 if (done.isNotEmpty()) {
                     item { Text(tr("In the cart", "I kurven"), Modifier.padding(top = 14.dp, bottom = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     items(done, key = { it.id }) { ItemRow(it, big = true) }
@@ -109,7 +116,7 @@ fun InStoreSplash() {
             }
             Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)) {
                 Button(
-                    onClick = { ListRepo.clearChecked(); StoreAlert.splash = null },
+                    onClick = { ListRepo.clearChecked(all = true); StoreAlert.splash = null },
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {

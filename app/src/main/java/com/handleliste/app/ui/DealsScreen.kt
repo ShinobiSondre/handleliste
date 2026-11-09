@@ -1,6 +1,25 @@
 package com.handleliste.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,17 +86,22 @@ fun DealsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val results = Deals.results
+    var zoom by remember { mutableStateOf<Offer?>(null) }
+    // Tabs: everything, then one per store that has deals on your list (most first).
+    val stores = Deals.bestStores()
+    var tab by rememberSaveable { mutableStateOf("") }
+    if (tab.isNotEmpty() && stores.none { it.first == tab }) tab = ""
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(tr("Deals", "Tilbud"), style = MaterialTheme.typography.headlineMedium)
                     val sub = when {
                         Deals.loading -> tr("Looking through this week's flyers…", "Ser gjennom ukens tilbudsaviser …")
-                        Deals.fetchedAt > 0 -> tr("Within ${Settings.radiusKm(ctx)} km · updated ", "Innen ${Settings.radiusKm(ctx)} km · oppdatert ") +
+                        Deals.fetchedAt > 0 -> tr("Checked automatically · ", "Sjekkes automatisk · ") +
                             SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(Deals.fetchedAt))
-                        else -> tr("For what's on your list", "For det som står på listen")
+                        else -> tr("Checked automatically for your lists", "Sjekkes automatisk for listene dine")
                     }
                     Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -86,56 +110,126 @@ fun DealsScreen() {
                 }
             }
             if (Deals.loading) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
             }
         }
-
-        Deals.error?.let { e -> item { Note(e) } }
-        if (Deals.usedFallbackLocation && Deals.fetchedAt > 0) {
-            item { Note(tr("Location is off, so these are deals around Oslo. Turn on location for stores near you.",
-                "Posisjon er av, så dette er tilbud rundt Oslo. Slå på posisjon for butikker nær deg.")) }
-        }
-
-        if (!Deals.loading && Deals.fetchedAt == 0L && results.isEmpty()) {
-            item {
-                Text(
-                    if (ListRepo.open.isEmpty()) tr("Add something to your list first, then check for deals.", "Legg til noe på listen først, så sjekker vi tilbud.")
-                    else tr("Tap ↻ to check this week's deals for your list.", "Trykk ↻ for å sjekke ukens tilbud for listen din."),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp)
-                )
+        if (stores.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { StoreTab(tr("All", "Alle"), null, tab == "") { tab = "" } }
+                items(stores, key = { it.first }) { (store, n) -> StoreTab(store, n, tab == store) { tab = store } }
             }
         }
 
-        val best = Deals.bestStores().take(3)
-        if (best.isNotEmpty()) {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.EmojiEvents, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text(tr("Most of your list on sale", "Flest av varene dine på tilbud"), fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer)
-                            Text(best.joinToString("  ·  ") { (s, n) -> "$s ($n)" }, color = MaterialTheme.colorScheme.onTertiaryContainer)
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Deals.error?.let { e -> item { Note(e) } }
+            if (Deals.usedFallbackLocation && Deals.fetchedAt > 0) {
+                item { Note(tr("Location is off, so these are deals around Oslo. Turn on location for stores near you.",
+                    "Posisjon er av, så dette er tilbud rundt Oslo. Slå på posisjon for butikker nær deg.")) }
+            }
+            if (!Deals.loading && Deals.fetchedAt == 0L && results.isEmpty()) {
+                item {
+                    Text(
+                        if (ListRepo.open.isEmpty()) tr("Add something to a list, and deals are checked by themselves.", "Legg til noe på en liste, så sjekkes tilbud av seg selv.")
+                        else tr("Checking deals…", "Sjekker tilbud …"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                }
+            }
+
+            if (tab.isEmpty()) {
+                items(results.sortedByDescending { it.offers.size }, key = { it.item }) { ItemDealsCard(it) { o -> zoom = o } }
+            } else {
+                val here = Deals.atStore(tab)
+                item {
+                    Text(tr("${here.map { it.first }.distinct().size} of your items on sale at $tab", "${here.map { it.first }.distinct().size} av varene dine på tilbud hos $tab"),
+                        style = MaterialTheme.typography.titleMedium)
+                }
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            here.forEachIndexed { i, (item, o) ->
+                                if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                OfferRow(o, forItem = item) { zoom = o }
+                            }
                         }
                     }
                 }
+                val total = here.groupBy { it.first }.values.sumOf { l -> l.minOf { it.second.price } }
+                item {
+                    Text(tr("Cheapest deal per item here adds up to ${kr(total)}", "Billigste tilbud per vare her blir til sammen ${kr(total)}"),
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            if (Deals.fetchedAt > 0) {
+                item {
+                    Text(
+                        (if (Deals.chains.isNotEmpty()) tr("Searched this week's flyers from ", "Søkte i ukens tilbudsaviser fra ") +
+                            Deals.chains.joinToString(", ") + ". " else "") +
+                            tr("Deals from eTilbudsavis (Tjek). ", "Tilbud fra eTilbudsavis (Tjek). ") +
+                            if (Settings.kassalKey(ctx).isNotBlank()) tr("Shelf prices from Kassalapp.", "Hyllepriser fra Kassalapp.")
+                            else tr("Add a free Kassalapp key in Settings to also compare everyday prices.", "Legg inn en gratis Kassalapp-nøkkel i Innstillinger for å også sammenligne vanlige priser."),
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
+    }
+    zoom?.let { OfferImageViewer(it) { zoom = null } }
+}
 
-        items(results.sortedByDescending { it.offers.size }, key = { it.item }) { ItemDealsCard(it) }
+@Composable
+private fun StoreTab(label: String, count: Int?, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick, shape = RoundedCornerShape(50),
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 1.dp
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (count != null) { Spacer(Modifier.width(6.dp)); Text("$count", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
 
-        if (Deals.fetchedAt > 0) {
-            item {
-                Text(
-                    (if (Deals.chains.isNotEmpty()) tr("Searched this week's flyers from ", "Søkte i ukens tilbudsaviser fra ") +
-                        Deals.chains.joinToString(", ") + ". " else "") +
-                    tr("Deals from eTilbudsavis (Tjek). ", "Tilbud fra eTilbudsavis (Tjek). ") +
-                        if (Settings.kassalKey(ctx).isNotBlank()) tr("Shelf prices from Kassalapp.", "Hyllepriser fra Kassalapp.")
-                        else tr("Add a free Kassalapp key in Settings to also compare everyday prices.", "Legg inn en gratis Kassalapp-nøkkel i Innstillinger for å også sammenligne vanlige priser."),
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+/** The offer's picture full screen: pinch to zoom, drag to look around, tap ✕ or back to close. */
+@Composable
+private fun OfferImageViewer(o: Offer, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        var scale by remember { mutableFloatStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        val state = rememberTransformableState { z, pan, _ ->
+            scale = (scale * z).coerceIn(1f, 5f)
+            offset = if (scale == 1f) Offset.Zero else offset + pan
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AsyncImage(
+                model = o.imageLarge ?: o.image, contentDescription = o.heading,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(bottom = 120.dp, top = 56.dp)
+                    .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
+                    .transformable(state)
+                    .pointerInput(Unit) { detectTapGestures(onDoubleTap = { if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 2.5f }) }
+            )
+            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)) {
+                Icon(Icons.Filled.Close, tr("Close", "Lukk"), tint = Color.White)
+            }
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).navigationBarsPadding().padding(16.dp)) {
+                Text(o.store, color = Sun, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(o.heading, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                if (o.description.isNotBlank()) Text(o.description, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(kr(o.price), color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp)
+                    o.prePrice?.let {
+                        Spacer(Modifier.width(10.dp))
+                        Text(kr(it), color = Color.White.copy(alpha = 0.6f), textDecoration = TextDecoration.LineThrough)
+                    }
+                    val till = shortDate(o.runTill)
+                    if (till.isNotBlank()) { Spacer(Modifier.weight(1f)); Text(tr("Until $till", "Til og med $till"), color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp) }
+                }
             }
         }
     }
@@ -153,7 +247,7 @@ private fun Note(text: String) {
 }
 
 @Composable
-private fun ItemDealsCard(d: ItemDeals) {
+private fun ItemDealsCard(d: ItemDeals, onImage: (Offer) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.padding(vertical = 12.dp)) {
             Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -170,7 +264,7 @@ private fun ItemDealsCard(d: ItemDeals) {
             }
             d.offers.take(5).forEachIndexed { i, o ->
                 if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                OfferRow(o)
+                OfferRow(o) { onImage(o) }
             }
             if (d.prices.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
@@ -192,15 +286,15 @@ private fun ItemDealsCard(d: ItemDeals) {
 }
 
 @Composable
-private fun OfferRow(o: Offer) {
+private fun OfferRow(o: Offer, forItem: String? = null, onImage: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).background(Color.White), contentAlignment = Alignment.Center) {
-            if (o.image != null) AsyncImage(o.image, null, Modifier.size(48.dp), contentScale = ContentScale.Fit)
+        Box(Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).background(Color.White).clickable(onClick = onImage), contentAlignment = Alignment.Center) {
+            if (o.image != null) AsyncImage(o.image, tr("Show larger", "Vis større"), Modifier.size(60.dp), contentScale = ContentScale.Fit)
             else Text("🏷️", fontSize = 22.sp)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(o.store, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text(if (forItem != null) forItem.uppercase() else o.store, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             Text(o.heading, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
             val till = shortDate(o.runTill)
             if (till.isNotBlank()) Text(tr("Until $till", "Til og med $till"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

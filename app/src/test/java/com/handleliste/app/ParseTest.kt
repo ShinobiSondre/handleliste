@@ -87,4 +87,30 @@ class ParseTest {
             {"id":"g","offer_count":18,"branding":{"name":"Coop Byggmix"}},{"id":"h","offer_count":135,"branding":{"name":"Bunnpris"}}]"""
         assertEquals(listOf("KIWI", "Obs", "Extra", "Bunnpris"), Parse.groceryCatalogs(json).map { it.second })
     }
+
+    @Test fun suggestions() {
+        val day = 24 * 3600 * 1000L
+        val now = 100 * day
+        val milk = com.handleliste.app.data.Habit("Melk", listOf(now - 12 * day, now - 8 * day, now - 4 * day), 3)   // every 4 days, due now
+        val coffee = com.handleliste.app.data.Habit("Kaffe", listOf(now - 15 * day, now - 1 * day), 2)               // every 14 days, not due
+        val once = com.handleliste.app.data.Habit("Safran", listOf(now - 3 * day), 0)                                 // bought once: no
+        val old = com.handleliste.app.data.Habit("Julebrus", listOf(now - 90 * day, now - 88 * day), 2)              // stopped buying
+        val s = com.handleliste.app.data.Suggest.suggestions(listOf(milk, coffee, once, old), emptySet(), now)
+        assertEquals(listOf("Melk", "Kaffe"), s.map { it.name })
+        assertTrue(s[0].due); assertEquals(4, s[0].everyDays); assertTrue(!s[1].due)
+        // Already on a list: not suggested.
+        assertEquals(listOf("Kaffe"), com.handleliste.app.data.Suggest.suggestions(listOf(milk, coffee), setOf("melk"), now).map { it.name })
+        // Ticking twice in one trip counts once; un-ticking right away undoes it.
+        val h = com.handleliste.app.data.Suggest.bought(milk, "Melk", now)
+        assertEquals(4, h.buys.size)
+        assertEquals(4, com.handleliste.app.data.Suggest.bought(h, "Melk", now + 3600_000).buys.size)
+        assertEquals(3, com.handleliste.app.data.Suggest.unbought(h, now + 60_000).buys.size)
+    }
+
+    @Test fun dinnerBuyLine() {
+        val a = "### 1. Taco\nLaget med **kjøttdeig**.\n\nHANDLE: lomper, rømme, mais.\n"
+        assertEquals(listOf("lomper", "rømme", "mais"), com.handleliste.app.data.Dinner.missing(a))
+        assertTrue(!com.handleliste.app.data.Dinner.display(a).contains("HANDLE"))
+        assertTrue(com.handleliste.app.data.Dinner.missing("**HANDLE:** ingenting").isEmpty())
+    }
 }

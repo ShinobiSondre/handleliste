@@ -130,15 +130,6 @@ fun SettingsScreen() {
             )
         }
 
-        Section(tr("Dinner ideas", "Middagsforslag")) {
-            KeyField(
-                title = tr("Gemini key (free)", "Gemini-nøkkel (gratis)"),
-                help = tr("From Google AI Studio. Used only to ask for recipes.", "Fra Google AI Studio. Brukes bare til å spørre om oppskrifter."),
-                initial = Settings.geminiKey(ctx), url = "https://aistudio.google.com/apikey",
-                onSave = { Settings.setGeminiKey(ctx, it) }
-            )
-        }
-
         Section(tr("About", "Om appen")) {
             Text(tr("Version ${BuildConfig.VERSION_NAME}", "Versjon ${BuildConfig.VERSION_NAME}"))
             Text(tr("Updates install themselves from GitHub.", "Oppdateringer installeres automatisk fra GitHub."),

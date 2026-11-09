@@ -42,7 +42,8 @@ object Flyers {
                 val x = a.getJSONObject(it)
                 Offer(x.optString("id"), x.optString("h"), x.optString("d"), x.optString("s"), x.optDouble("p"),
                     x.optDouble("pp", Double.NaN).takeIf { v -> !v.isNaN() }, "NOK", x.optString("t"),
-                    x.optString("i").takeIf { u -> u.startsWith("http") }, x.optString("f"))
+                    x.optString("i").takeIf { u -> u.startsWith("http") }, x.optString("f"),
+                    x.optString("z").takeIf { u -> u.startsWith("http") })
             }
         }
     }
@@ -52,7 +53,7 @@ object Flyers {
         offers.forEach {
             a.put(JSONObject().put("id", it.id).put("h", it.heading).put("d", it.description).put("s", it.store)
                 .put("p", it.price).put("pp", it.prePrice ?: JSONObject.NULL).put("t", it.runTill).put("f", it.runFrom)
-                .put("i", it.image ?: ""))
+                .put("i", it.image ?: "").put("z", it.imageLarge ?: ""))
         }
         runCatching {
             file(ctx).writeText(JSONObject().put("lat", lat).put("lng", lng).put("at", at).put("radius", radius).put("offers", a).toString())
