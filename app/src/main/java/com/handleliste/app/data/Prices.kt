@@ -44,16 +44,19 @@ object Prices {
     }
 
     /** What each grocery costs now: cheapest deal near you, else the normal store price (MENY or Oda). */
-    suspend fun check(ctx: Context, items: List<String>): List<PriceLine> = withContext(Dispatchers.Default) {
+    suspend fun check(ctx: Context, items: List<String>, pins: Map<String, Pin> = emptyMap()): List<PriceLine> = withContext(Dispatchers.Default) {
         val flyers = Flyers.cached(ctx)
         coroutineScope {
             items.map { item ->
                 async {
+                    // An item where you picked a product is priced as that product.
+                    val pin = pins[item]
                     val term = Parse.searchTerm(item)
-                    val deal = Parse.matchOffers(term, flyers).minByOrNull { it.price }
+                    val deal = Parse.matchOffers(term, flyers, limit = 40)
+                        .filter { pin == null || Parse.pinMatches(pin, it) }.minByOrNull { it.price }
                     if (deal != null) PriceLine(item, deal.price, deal.store, deal.heading.lowercase(), true)
                     else {
-                        val p = runCatching { Catalog.search(term) }.getOrDefault(emptyList())
+                        val p = runCatching { Catalog.search(pin?.name?.let { Parse.keywords(it).take(4).joinToString(" ") } ?: term) }.getOrDefault(emptyList())
                             .take(8).filter { it.price != null }.minByOrNull { it.price!! }
                         if (p != null) PriceLine(item, p.price, p.source, p.name, false)
                         else PriceLine(item, null, "", "", false)

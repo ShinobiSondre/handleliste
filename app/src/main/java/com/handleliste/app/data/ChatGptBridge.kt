@@ -56,7 +56,7 @@ object ChatGptBridge {
         "var a=document.querySelectorAll('[data-message-role=\"assistant\"]');" +
         "if(!a.length)a=document.querySelectorAll('[data-message-author-role=\"assistant\"]');" +
         "if(!a.length)a=document.querySelectorAll('[data-turn=\"assistant\"]');" +
-        "var out=[];for(var i=0;i<a.length;i++)out.push(a[i].innerText);" +
+        "var out=[];for(var i=0;i<a.length;i++)out.push(mdOf(a[i])||a[i].innerText);" +
         "if(!out.length){var m=document.querySelectorAll('article .markdown, .markdown.prose');for(var j=0;j<m.length;j++)out.push(m[j].innerText);}" +
         // Last resort: the page text itself – each answer follows a "ChatGPT said:" label.
         "if(!out.length&&document.body){var parts=document.body.innerText.split(/ChatGPT (?:said|sa):/);" +
@@ -71,6 +71,31 @@ object ChatGptBridge {
         "body:(document.body?document.body.innerText:'').slice(0,240)," +
         "tail:(document.body?document.body.innerText:'').slice(-300)," +
         "dialog:[].slice.call(document.querySelectorAll('[role=\"dialog\"], [aria-modal=\"true\"]')).map(function(e){return (e.innerText||'').replace(/\\s+/g,' ').slice(0,200);}).join(' | ')});})()"
+    /**
+     * Turns an answer's page elements back into light Markdown, so dish names (headings and bold
+     * text) and lists survive. Plain innerText dropped that, and the titles looked like body text.
+     */
+    private val MD = """
+        function mdN(n){
+          if(n.nodeType===3)return n.nodeValue;
+          if(n.nodeType!==1)return '';
+          var t=n.tagName;
+          if(t==='BUTTON'||t==='svg'||t==='SVG'||t==='STYLE'||t==='SCRIPT'||n.getAttribute('aria-hidden')==='true'||n.hasAttribute('data-message-actions'))return '';
+          var s='';for(var i=0;i<n.childNodes.length;i++)s+=mdN(n.childNodes[i]);
+          if(/^H[1-6]$/.test(t))return '\n\n### '+s.trim()+'\n';
+          if(t==='STRONG'||t==='B')return s.trim()?'**'+s.trim()+'** ':'';
+          if(t==='LI')return '\n• '+s.trim();
+          if(t==='BR')return '\n';
+          if(t==='P'||t==='UL'||t==='OL'||t==='DIV'||t==='SECTION'||t==='TABLE'||t==='TR'||t==='PRE'||t==='BLOCKQUOTE')return '\n'+s+'\n';
+          if(t==='TD'||t==='TH')return s+'  ';
+          return s;
+        }
+        function mdOf(el){var s='';for(var i=0;i<el.childNodes.length;i++)s+=mdN(el.childNodes[i]);
+          return s.replace(/\*\*\s+\*\*/g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();}
+    """.trimIndent()
+    /** [READ] with the Markdown helper inside it. */
+    private val READ_MD by lazy { READ.replaceFirst("(function(){", "(function(){$MD\n") }
+
     // How the page is built (for the diagnostics when no answer is found): which conversation markers
     // exist, the input box, and whether our question appears anywhere.
     private const val PAGE_SHAPE = "(function(){function n(s){return document.querySelectorAll(s).length;}" +
@@ -248,11 +273,12 @@ object ChatGptBridge {
             while (true) {
                 delay(600)
                 val w = web ?: return@launch
-                val raw = kotlinx.coroutines.suspendCancellableCoroutine<String?> { c -> w.evaluateJavascript(READ) { c.resumeWith(Result.success(it)) } }
+                val raw = kotlinx.coroutines.suspendCancellableCoroutine<String?> { c -> w.evaluateJavascript(READ_MD) { c.resumeWith(Result.success(it)) } }
                 val o = runCatching { JSONObject(JSONTokener(raw).nextValue() as String) }.getOrNull() ?: continue
                 o.optString("url").takeIf { it.startsWith("http") }?.let { pageUrl.value = it }
                 val answers = o.optJSONArray("a") ?: JSONArray()
-                val text = (if (answers.length() >= expected) answers.optString(expected - 1).trim() else "").let(::clean)
+                // Every question is a fresh page, so all assistant parts belong to this one answer.
+                val text = (if (answers.length() >= expected) (0 until answers.length()).joinToString("\n\n") { answers.optString(it).trim() }.trim() else "").let(::clean)
                 if (text.isNotEmpty()) {
                     // Everything before + the answer as it's being written.
                     turns.value = history + Turn(false, text)

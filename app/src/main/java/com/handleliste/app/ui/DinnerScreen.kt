@@ -2,6 +2,14 @@ package com.handleliste.app.ui
 
 import android.app.Activity
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,6 +98,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import com.handleliste.app.data.Deals
 import com.handleliste.app.data.Dinner
 import com.handleliste.app.data.ListRepo
@@ -247,8 +256,13 @@ fun DinnerChat(onClose: () -> Unit) {
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val thinking = status == ChatGptBridge.Status.THINKING
-    LaunchedEffect(turns.size, turns.lastOrNull()?.text?.length) {
-        if (turns.isNotEmpty()) listState.animateScrollToItem(turns.size)
+    // While ChatGPT writes, its half-finished answer is hidden behind a typing animation. The chat only
+    // moves twice: down to the animation when you ask, and to the top of the answer when it's complete.
+    val shown = if (thinking && turns.lastOrNull()?.user == false) turns.dropLast(1) else turns
+    LaunchedEffect(shown.size, status) {
+        if (shown.isEmpty()) return@LaunchedEffect
+        if (thinking) listState.animateScrollToItem(shown.size) // the typing animation
+        else if (status == ChatGptBridge.Status.DONE && shown.lastOrNull()?.user == false) listState.animateScrollToItem(shown.lastIndex)
     }
     fun send(q: String) {
         if (q.isBlank() || thinking) return
@@ -279,19 +293,20 @@ fun DinnerChat(onClose: () -> Unit) {
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, tr("Close", "Lukk")) }
             }
             LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                itemsIndexed(turns) { i, t ->
+                itemsIndexed(shown) { i, t ->
                     if (t.user) Bubble(t.text, mine = true)
                     else {
                         Bubble(Dinner.display(t.text), mine = false)
                         val missing = Dinner.missing(t.text)
-                        val last = i == turns.lastIndex
-                        if (missing.isNotEmpty() && (!last || status == ChatGptBridge.Status.DONE)) {
-                            if (ChatUi.budget != null) PriceCheck(missing, ChatUi.budget!!)
-                            AddMissing(missing)
+                        val last = i == shown.lastIndex
+                        val usesList = ChatUi.budget != null && Dinner.usedFromList(t.text, ListRepo.open.map { it.name }).isNotEmpty()
+                        if ((missing.isNotEmpty() || usesList) && (!last || status == ChatGptBridge.Status.DONE)) {
+                            if (ChatUi.budget != null) PriceCheck(missing, Dinner.usedFromList(t.text, ListRepo.open.map { it.name }), ChatUi.budget!!)
+                            if (missing.isNotEmpty()) AddMissing(missing)
                         }
                     }
                 }
-                if (thinking && turns.lastOrNull()?.user != false) item { Bubble("…", mine = false) }
+                if (thinking) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
                 error?.let { e ->
                     item {
                         Column {
@@ -334,12 +349,18 @@ fun DinnerChat(onClose: () -> Unit) {
     }
 }
 
-/** Checks the plan against today's prices: deals near you first, else the normal store price (MENY or Oda). */
+/**
+ * Checks the plan against today's prices (deals near you first, else the normal store price): what the
+ * dinner uses from your shopping lists counts too, so the total is what the whole dinner costs.
+ */
 @Composable
-private fun PriceCheck(items: List<String>, budget: Int) {
+private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int) {
     val ctx = LocalContext.current
-    var lines by remember(items) { mutableStateOf<List<PriceLine>?>(null) }
-    LaunchedEffect(items) { lines = runCatching { Prices.check(ctx, items) }.getOrDefault(emptyList()) }
+    var lines by remember(extra, fromList) { mutableStateOf<Pair<List<PriceLine>, List<PriceLine>>?>(null) }
+    LaunchedEffect(extra, fromList) {
+        val pins = ListRepo.open.mapNotNull { i -> i.pin?.let { i.name to it } }.toMap()
+        lines = runCatching { Prices.check(ctx, fromList, pins) to Prices.check(ctx, extra) }.getOrDefault(emptyList<PriceLine>() to emptyList())
+    }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(tr("Price check, today's prices", "Prissjekk med dagens priser"), fontWeight = FontWeight.Bold)
@@ -350,22 +371,34 @@ private fun PriceCheck(items: List<String>, budget: Int) {
                     Text(tr("Looking up prices…", "Henter priser …"), fontSize = 13.sp)
                 }
             } else {
-                l.forEach { p ->
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(p.item, fontSize = 14.sp)
-                            if (p.price != null) Text((if (p.onSale) "🏷️ " else "") + p.where + " · " + p.product, fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val (listLines, extraLines) = l
+                @Composable fun section(title: String, rows: List<PriceLine>) {
+                    if (rows.isEmpty()) return
+                    Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp))
+                    rows.forEach { p ->
+                        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(p.item, fontSize = 14.sp)
+                                if (p.price != null) Text((if (p.onSale) "🏷️ " else "") + p.where + " · " + p.product, fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text(p.price?.let { kr(it) } ?: "?", fontWeight = FontWeight.SemiBold,
+                                color = if (p.onSale) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface)
                         }
-                        Text(p.price?.let { kr(it) } ?: "?", fontWeight = FontWeight.SemiBold,
-                            color = if (p.onSale) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface)
                     }
+                    val sub = rows.sumOf { it.price ?: 0.0 }
+                    Text(tr("Subtotal ", "Delsum ") + kr(sub), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp), textAlign = TextAlign.End)
                 }
-                val total = l.sumOf { it.price ?: 0.0 }
-                val unknown = l.count { it.price == null }
+                section(tr("From your shopping list", "Fra handlelisten din"), listLines)
+                section(tr("To buy extra", "Må kjøpes i tillegg"), extraLines)
+                val all = listLines + extraLines
+                val total = all.sumOf { it.price ?: 0.0 }
+                val unknown = all.count { it.price == null }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(tr("Total", "Totalt") + if (unknown > 0) tr(" (+$unknown unknown)", " (+$unknown ukjent)") else "",
+                    Text(tr("Whole dinner", "Hele middagen") + if (unknown > 0) tr(" (+$unknown unknown)", " (+$unknown ukjent)") else "",
                         fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Text(kr(total), fontWeight = FontWeight.Black, fontSize = 18.sp,
                         color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
@@ -375,10 +408,43 @@ private fun PriceCheck(items: List<String>, budget: Int) {
                     else tr("Over your $budget kr. Ask for something cheaper below.", "Over budsjettet på $budget kr. Be om noe billigere under."),
                     fontSize = 12.sp, color = if (total <= budget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
-                Text(tr("Whole packs. Deals near you, otherwise the normal store price (MENY or Oda) as a guide.", "Hele pakninger. Tilbud nær deg, ellers vanlig butikkpris (MENY eller Oda) som pekepinn."),
+                Text(tr("Whole packs, incl. what you use from your list. Deals near you, otherwise the normal store price (MENY or Oda).",
+                    "Hele pakninger, inkludert det du bruker fra listen. Tilbud nær deg, ellers vanlig butikkpris (MENY eller Oda)."),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+/** Three bouncing dots in a chat bubble while ChatGPT is thinking or writing. */
+@Composable
+private fun Typing(writing: Boolean) {
+    val t = rememberInfiniteTransition(label = "typing")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp),
+            color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp
+        ) {
+            Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                repeat(3) { i ->
+                    val y by t.animateFloat(
+                        initialValue = 0f, targetValue = 0f,
+                        animationSpec = infiniteRepeatable(keyframes {
+                            durationMillis = 1200
+                            0f at 0 + i * 150
+                            -7f at 200 + i * 150 using FastOutSlowInEasing
+                            0f at 400 + i * 150
+                        }), label = "dot$i"
+                    )
+                    val a by t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(600, delayMillis = i * 150), RepeatMode.Reverse), label = "a$i")
+                    Box(Modifier.offset(y = y.dp).size(9.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = a)))
+                }
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(if (writing) tr("Writing the recipes…", "Skriver oppskriftene …") else tr("Thinking…", "Tenker …"),
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

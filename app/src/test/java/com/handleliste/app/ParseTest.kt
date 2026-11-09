@@ -186,4 +186,16 @@ class ParseTest {
         assertTrue(!Parse.sameKind(fil, "kylling", offer("KYLLINGVINGER/KLUBBER", "REMA 1000", 59.9)))
         assertTrue(!Parse.sameKind(fil, "kylling", offer("KYLLINGKJØTTDEIG", "REMA 1000", 44.9)))
     }
+
+    @Test fun budgetUsesShoppingList() {
+        val list = listOf("Pasta", "Kyllingfilet", "Melk", "Mais")
+        val a = "### Kyllingpasta\nPasta 25 kr, kylling 99 kr …\n\nBRUKER: pasta, kyllingfilet\nHANDLE: fløte, løk"
+        assertEquals(listOf("Pasta", "Kyllingfilet"), com.handleliste.app.data.Dinner.usedFromList(a, list))
+        assertEquals(listOf("fløte", "løk"), com.handleliste.app.data.Dinner.missing(a))
+        val shown = com.handleliste.app.data.Dinner.display(a)
+        assertTrue(!shown.contains("BRUKER") && !shown.contains("HANDLE"))
+        // No BRUKER line: the list items the answer mentions.
+        assertEquals(listOf("Pasta", "Mais"), com.handleliste.app.data.Dinner.usedFromList("Pasta med mais og ost.\nHANDLE: ost", list))
+        assertTrue(com.handleliste.app.data.Dinner.usedFromList("BRUKER: ingen\nHANDLE: taco", list).isEmpty())
+    }
 }

@@ -45,26 +45,34 @@ object Dinner {
                 b.append("Dette er ukens tilbud i butikker nær meg (ekte priser, bruk dem):\n")
                 deals.forEach { b.append(it).append("\n") }
             }
-            if (list.isNotEmpty()) b.append("Dette står allerede på handlelisten min: ${list.joinToString(", ")}\n")
+            if (list.isNotEmpty()) b.append("Dette står på handlelisten min og skal kjøpes uansett: ${list.joinToString(", ")}. " +
+                "Bruk gjerne disse varene, men de er IKKE gratis: prisen på varene fra handlelisten som middagen bruker, må telles med i totalen.\n")
             if (extra.isNotBlank()) b.append("Dette har jeg hjemme fra før (koster ingenting): $extra\n")
             if (wishes.isNotBlank()) b.append("Ønsker: $wishes\n")
             b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Tell med hele pakninger slik de selges i butikken. " +
                 "Foreslå 1 middag (og gjerne 1 billigere reserve). Vis en kort handleliste med pris per vare og butikk, totalsum, og en enkel oppskrift. " +
                 "Bruk norske priser for 2025–2026 der tilbudene ikke dekker det. Hold deg under $budget kr. Svar på norsk.\n")
-            b.append("Avslutt med én linje som starter med «HANDLE:» med varene jeg må kjøpe for hovedforslaget, korte varenavn, adskilt med komma.")
+            b.append("Totalen skal være alt middagen koster: varene fra handlelisten som brukes + det jeg må kjøpe i tillegg.\n")
+            b.append("Avslutt med nøyaktig to linjer for hovedforslaget, korte varenavn adskilt med komma: " +
+                "én som starter med «BRUKER:» med varene fra handlelisten min som middagen bruker (skriv «BRUKER: ingen» hvis ingen), " +
+                "og én som starter med «HANDLE:» med det jeg må kjøpe i tillegg.")
         } else {
             b.append("Make a dinner for $servings ${if (servings == 1) "person" else "people"} that costs at most $budget NOK in total to buy.\n")
             if (deals.isNotEmpty()) {
                 b.append("These are this week's deals in stores near me (real prices, use them):\n")
                 deals.forEach { b.append(it).append("\n") }
             }
-            if (list.isNotEmpty()) b.append("Already on my shopping list: ${list.joinToString(", ")}\n")
+            if (list.isNotEmpty()) b.append("On my shopping list, to be bought anyway: ${list.joinToString(", ")}. " +
+                "Use them if they fit, but they are NOT free: the price of the list items the dinner uses must be counted in the total.\n")
             if (extra.isNotBlank()) b.append("Already at home (free): $extra\n")
             if (wishes.isNotBlank()) b.append("Wishes: $wishes\n")
             b.append("Assume I have salt, pepper, oil, butter and common spices. Count whole packs as sold in Norwegian stores. " +
                 "Suggest 1 dinner (and maybe 1 cheaper backup). Show a short shopping list with price per item and store, the total, and a simple recipe. " +
                 "Use Norwegian 2025–2026 prices where the deals don't cover it. Stay under $budget NOK.\n")
-            b.append("End with one line starting with \"BUY:\" listing what I must buy for the main suggestion, short grocery names, separated by commas.")
+            b.append("The total is everything the dinner costs: the shopping-list items it uses + what I must buy extra.\n")
+            b.append("End with exactly two lines for the main suggestion, short grocery names separated by commas: " +
+                "one starting with \"USES:\" with the items from my shopping list the dinner uses (\"USES: none\" if none), " +
+                "and one starting with \"BUY:\" with what I must buy extra.")
         }
         return b.toString()
     }
@@ -76,6 +84,24 @@ object Dinner {
             .filter { it.isNotBlank() && !it.equals("ingenting", true) && !it.equals("nothing", true) && it.length < 40 }
     }
 
-    /** The answer without the "HANDLE:" line (that one becomes a button). */
-    fun display(answer: String): String = answer.replace(BUY_LINE, "").trim()
+    private val USES_LINE = Regex("(?im)^\\W*(BRUKER|USES)[*\\s]*:[*\\s]*(.+)$")
+
+    /**
+     * Shopping-list items the dinner uses (they cost money too). From ChatGPT's "BRUKER:" line, matched back
+     * to your list; if it left the line out, the list items its answer mentions.
+     */
+    fun usedFromList(answer: String, list: List<String>): List<String> {
+        val line = USES_LINE.findAll(answer).lastOrNull()?.groupValues?.get(2)
+        val body = display(answer).lowercase()
+        if (line == null) return list.filter { item -> Parse.searchTerm(item).split(" ").filter { it.length >= 3 }.let { w -> w.isNotEmpty() && w.all { body.contains(it) } } }
+        val named = line.replace("*", "").split(",", ";").map { it.trim().trimEnd('.').lowercase() }
+            .filter { it.isNotBlank() && it !in setOf("ingen", "none", "ingenting", "nothing") }
+        return list.filter { item ->
+            val t = Parse.searchTerm(item)
+            named.any { n -> n.contains(t) || t.contains(n) || Parse.searchTerm(n) == t }
+        }
+    }
+
+    /** The answer without the "HANDLE:"/"BRUKER:" lines (they become the price check and a button). */
+    fun display(answer: String): String = answer.replace(BUY_LINE, "").replace(USES_LINE, "").trim()
 }
