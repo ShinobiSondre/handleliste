@@ -94,6 +94,7 @@ import kotlinx.coroutines.withContext
 import com.handleliste.app.data.PriceLine
 import com.handleliste.app.data.Prices
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -120,13 +121,15 @@ fun DinnerScreen() {
         tr("Cheap", "Billig"), tr("Healthy", "Sunn"), tr("Cosy / comfort food", "Kos / hverdagsfavoritt"),
     )
     val turns by ChatGptBridge.turns.collectAsState()
+    // Warm ChatGPT up in the background while you choose, so the answer comes faster.
+    LaunchedEffect(Unit) { (ctx as? Activity)?.let { ChatGptBridge.prewarm(it) } }
     var budget by rememberSaveable { mutableFloatStateOf(100f) }
     var servings by rememberSaveable { mutableIntStateOf(2) }
     var preparing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun ask() {
-        val list = ListRepo.open.map { it.name }
+        val list = ChatUi.items().map { it.name }
         val onSale = if (useDeals) Deals.results.filter { it.offers.isNotEmpty() }.map { it.item } else emptyList()
         val prompt = Dinner.prompt(list, extra, onSale, wishes.joinToString(", "))
         val shown = tr("What can I make for dinner?", "Hva kan jeg lage til middag?") +
@@ -150,7 +153,7 @@ fun DinnerScreen() {
             preparing = false
         }
         val deals = withContext(Dispatchers.Default) { Prices.dinnerDeals(ctx).map { Prices.dealLine(it) } }
-        val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ListRepo.open.map { it.name }, extra, deals, wishes.joinToString(", "))
+        val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ChatUi.items().map { it.name }, extra, deals, wishes.joinToString(", "))
         val shown = tr("Make me dinner for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "people"}",
             "Lag middag for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
             (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
@@ -189,8 +192,23 @@ fun DinnerScreen() {
         Spacer(Modifier.height(14.dp))
         Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                Text(tr("From your lists", "Fra listene dine"), fontWeight = FontWeight.SemiBold)
-                val open = ListRepo.open
+                Text(tr("Based on", "Basert på"), fontWeight = FontWeight.SemiBold)
+                // Pick one or more lists; the dinner is planned from what's on those.
+                if (ListRepo.lists.size > 1) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                        val chosen = ChatUi.chosen()
+                        ListRepo.lists.forEach { l ->
+                            val on = l.id in chosen
+                            FilterChip(selected = on, onClick = {
+                                val now = chosen.toMutableList()
+                                if (on) { if (now.size > 1) now.remove(l.id) } else now += l.id
+                                ChatUi.listIds.clear(); ChatUi.listIds.addAll(now)
+                            }, label = { Text(l.name + " (" + ListRepo.itemsOf(l.id).count { !it.checked } + ")") },
+                                leadingIcon = if (on) ({ Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }) else null)
+                        }
+                    }
+                }
+                val open = ChatUi.items()
                 Text(if (open.isEmpty()) tr("(nothing yet, so ChatGPT will suggest from scratch)", "(ingenting ennå, så ChatGPT foreslår fritt)")
                     else open.joinToString(", ") { it.name }, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -274,6 +292,11 @@ sealed class ChatEntry(val key: String) {
 /** Whether the dinner chat is on screen (drawn over the whole app by MainActivity). */
 object ChatUi {
     var open by mutableStateOf(false)
+    /** Which lists the dinner is based on (empty = the list you're on). */
+    val listIds = mutableStateListOf<String>()
+    fun chosen(): List<String> = listIds.filter { id -> ListRepo.lists.any { it.id == id } }.ifEmpty { listOf(ListRepo.currentId) }
+    /** Open items on the chosen lists. */
+    fun items() = chosen().flatMap { ListRepo.itemsOf(it) }.filter { !it.checked }
     /** Set when the chat is a budget dinner, so the price check can compare against it. */
     var budget by mutableStateOf<Int?>(null)
 }
@@ -292,7 +315,7 @@ fun DinnerChat(onClose: () -> Unit) {
     // While ChatGPT writes, its half-finished answer is hidden behind a typing animation. The chat only
     // moves twice: down to the animation when you ask, and to the top of the answer when it's complete.
     val shown = if (thinking && turns.lastOrNull()?.user == false) turns.dropLast(1) else turns
-    val listNames = ListRepo.open.map { it.name }
+    val listNames = ChatUi.items().map { it.name }
     // One entry per thing on screen: a bubble, a price check, an "add to list" card.
     val entries = buildList {
         shown.forEachIndexed { i, t ->
@@ -408,7 +431,7 @@ private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int)
     val ctx = LocalContext.current
     var lines by remember(extra, fromList) { mutableStateOf<Pair<List<PriceLine>, List<PriceLine>>?>(null) }
     LaunchedEffect(extra, fromList) {
-        val pins = ListRepo.open.mapNotNull { i -> i.pin?.let { i.name to it } }.toMap()
+        val pins = ChatUi.items().mapNotNull { i -> i.pin?.let { i.name to it } }.toMap()
         lines = runCatching { Prices.check(ctx, fromList, pins) to Prices.check(ctx, extra) }.getOrDefault(emptyList<PriceLine>() to emptyList())
     }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
@@ -505,9 +528,9 @@ private fun AddMissing(missing: List<String>) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(tr("You'd still need: ", "Du mangler: ") + missing.joinToString(", "), color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.height(6.dp))
-            Button(onClick = { ListRepo.add(missing.joinToString(",")); added = true }, enabled = !added) {
+            Button(onClick = { ListRepo.add(missing.joinToString(","), ChatUi.chosen().first()); added = true }, enabled = !added) {
                 Icon(Icons.Filled.AddShoppingCart, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
-                Text(if (added) tr("Added to \"${ListRepo.current?.name.orEmpty()}\"", "Lagt til i «${ListRepo.current?.name.orEmpty()}»")
+                Text(if (added) tr("Added to \"${ListRepo.lists.firstOrNull { it.id == ChatUi.chosen().first() }?.name.orEmpty()}\"", "Lagt til i «${ListRepo.lists.firstOrNull { it.id == ChatUi.chosen().first() }?.name.orEmpty()}»")
                     else tr("Add to shopping list", "Legg til i handlelisten"))
             }
         }

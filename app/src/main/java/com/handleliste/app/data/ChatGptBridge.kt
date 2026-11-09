@@ -67,7 +67,8 @@ object ChatGptBridge {
         "var pending=c?((c.innerText||c.value||'').trim().length):0;" +
         "var users=document.querySelectorAll('[data-message-role=\"user\"],[data-message-author-role=\"user\"]').length;" +
         "if(!users&&/\\/(uc|c)\\//.test(location.pathname))users=1;" +
-        "return JSON.stringify({a:out,busy:busy,pending:pending,users:users,input:!!c,url:location.href,title:document.title," +
+        "var complete=!!document.querySelector('[data-message-role=\"assistant\"][data-message-complete]');" +
+        "return JSON.stringify({a:out,busy:busy,complete:complete,pending:pending,users:users,input:!!c,url:location.href,title:document.title," +
         "body:(document.body?document.body.innerText:'').slice(0,240)," +
         "tail:(document.body?document.body.innerText:'').slice(-300)," +
         "dialog:[].slice.call(document.querySelectorAll('[role=\"dialog\"], [aria-modal=\"true\"]')).map(function(e){return (e.innerText||'').replace(/\\s+/g,' ').slice(0,200);}).join(' | ')});})()"
@@ -196,10 +197,19 @@ object ChatGptBridge {
             android.webkit.WebStorage.getInstance().deleteAllData()
             val fresh = a?.let { webView(it) }
             if (fresh == null) { fail(com.handleliste.app.util.tr("ChatGPT couldn't start. Try again.", "ChatGPT kunne ikke starte. Prøv igjen.")); return@removeAllCookies }
-            fresh.clearCache(true)
+            // (The HTTP cache is kept: ChatGPT's scripts load from it, which saves several seconds.)
             fresh.loadUrl(url)
             watch() // start reading only once the new page is on its way
         }
+    }
+
+    /**
+     * Opens ChatGPT quietly in the background before you ask (when the dinner screen opens), so its
+     * scripts are already loaded and cached. The question itself still goes to a fresh, wiped browser.
+     */
+    fun prewarm(a: Activity) {
+        if (web != null || status.value == Status.THINKING) return
+        webView(a)?.loadUrl("https://chatgpt.com/")
     }
 
     fun reset() { poll?.cancel(); session.value = null; turns.value = emptyList(); status.value = Status.STARTING; error.value = null }
@@ -287,7 +297,7 @@ object ChatGptBridge {
             var typed = false      // the question is typed in at most once (never twice into the chat)
             var snapshot = false   // one look at how the page is built, if no answer shows up
             while (true) {
-                delay(600)
+                delay(300)
                 val w = web ?: return@launch
                 val raw = kotlinx.coroutines.suspendCancellableCoroutine<String?> { c -> w.evaluateJavascript(READ_MD) { c.resumeWith(Result.success(it)) } }
                 val o = runCatching { JSONObject(JSONTokener(raw).nextValue() as String) }.getOrNull() ?: continue
@@ -302,7 +312,9 @@ object ChatGptBridge {
                     if (text != last) { last = text; stableSince = System.currentTimeMillis() }
                     val busy = o.optBoolean("busy")
                     // Finished: ChatGPT's stop button is gone and the text hasn't changed for 2.5 s.
-                    if (!busy && text.length >= 20 && System.currentTimeMillis() - stableSince > 2500) {
+                    // Done: ChatGPT marks the answer complete (instant), or the text stops changing for 1.5 s.
+                    val complete = o.optBoolean("complete")
+                    if (!busy && text.length >= 20 && (complete || System.currentTimeMillis() - stableSince > 1500)) {
                         status.value = Status.DONE
                         log("ask", "ChatGPT answered in ${(System.currentTimeMillis() - t0) / 1000.0} s (${text.length} chars)")
                         return@launch
