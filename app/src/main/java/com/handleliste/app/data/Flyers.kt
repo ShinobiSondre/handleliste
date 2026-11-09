@@ -2,7 +2,9 @@ package com.handleliste.app.data
 
 import android.content.Context
 import com.handleliste.app.util.Http
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -61,7 +63,13 @@ object Flyers {
     }
 
     /** All current grocery offers around this spot. Uses the phone's copy when it's recent and for this area. */
-    suspend fun near(ctx: Context, la: Double, ln: Double, radiusM: Int, force: Boolean = false): List<Offer> {
+    suspend fun near(ctx: Context, la: Double, ln: Double, radiusM: Int, force: Boolean = false): List<Offer> =
+        withContext(Dispatchers.IO) { nearBlocking(ctx, la, ln, radiusM, force) }
+
+    /** This week's offers on the phone, read off the main thread (the first read is a large file). */
+    suspend fun cachedAsync(ctx: Context): List<Offer> = withContext(Dispatchers.IO) { load(ctx); offers }
+
+    private suspend fun nearBlocking(ctx: Context, la: Double, ln: Double, radiusM: Int, force: Boolean): List<Offer> {
         load(ctx)
         val fresh = System.currentTimeMillis() - at < MAX_AGE_MS && radius == radiusM &&
             Parse.distanceM(la, ln, lat, lng) < MOVE_M && offers.isNotEmpty()
@@ -94,7 +102,7 @@ object Flyers {
         return offers
     }
 
-    /** This week's offers already on the phone (for the product picker). */
+    /** This week's offers already on the phone. Call from a background thread (see [cachedAsync]). */
     fun cached(ctx: Context): List<Offer> { load(ctx); return offers }
 
     val chains: List<String> get() = offers.map { it.store }.distinct().sorted()

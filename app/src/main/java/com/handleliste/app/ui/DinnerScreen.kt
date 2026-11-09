@@ -76,10 +76,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.handleliste.app.data.ChatGptBridge
 import com.handleliste.app.data.Flyers
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.handleliste.app.data.PriceLine
 import com.handleliste.app.data.Prices
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
@@ -123,7 +127,7 @@ fun DinnerScreen() {
 
     fun askBudget() = scope.launch {
         // Make sure this week's prices are on the phone (they usually are, from the automatic deals check).
-        if (Flyers.cached(ctx).isEmpty()) {
+        if (Flyers.cachedAsync(ctx).isEmpty()) {
             preparing = true
             runCatching {
                 val loc = currentLocation(ctx)
@@ -132,7 +136,7 @@ fun DinnerScreen() {
             }
             preparing = false
         }
-        val deals = Prices.dinnerDeals(ctx).map { Prices.dealLine(it) }
+        val deals = withContext(Dispatchers.Default) { Prices.dinnerDeals(ctx).map { Prices.dealLine(it) } }
         val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ListRepo.open.map { it.name }, extra, deals, wishes.joinToString(", "))
         val shown = tr("Make me dinner for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "people"}",
             "Lag middag for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
@@ -252,7 +256,9 @@ fun DinnerChat(onClose: () -> Unit) {
     }
 
     // Drawn inside the app's own window (not a dialog), so ChatGPT's hidden page keeps writing its answer.
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+    val seeThrough by ChatGptBridge.seeThrough.collectAsState()
+    // See-through mode (for screen recordings): the ChatGPT page behind shows clearly through the chat.
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = if (seeThrough) 0.25f else 1f))
         .pointerInput(Unit) { detectTapGestures { } }) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -264,6 +270,11 @@ fun DinnerChat(onClose: () -> Unit) {
                     Text(tr("Dinner ideas", "Middagsforslag"), fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Text(if (thinking) tr("ChatGPT is writing…", "ChatGPT skriver …") else "ChatGPT", fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { ChatGptBridge.setSeeThrough(!seeThrough) }) {
+                    Icon(if (seeThrough) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        tr("Show the ChatGPT page behind", "Vis ChatGPT-siden bak"),
+                        tint = if (seeThrough) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, tr("Close", "Lukk")) }
             }

@@ -169,4 +169,21 @@ class ParseTest {
         assertTrue(Parse.pinMatches(pin, offer("PESTO", "KIWI", 24.9, "Jacobs Utvalgte, Genovese, 185 g")))
         assertTrue(!Parse.pinMatches(pin, offer("BARILLA PESTO", "MENY", 29.9, "Rosso eller Genovese, 190 g")))
     }
+
+    @Test fun sameKindAndBrand() {
+        val korn = offer("MAISKORN", "KIWI", 24.9, "3 x 198 g, Eldorado, pr. kg 50,30")
+        assertEquals("Eldorado", Parse.brandOf(korn))
+        val pin = Parse.pinFromOffer(korn)
+        assertEquals("Eldorado Maiskorn", pin.name)
+        assertEquals("maiskorn", Parse.coreWord(pin, "mais"))
+        assertTrue(Parse.sameKind(pin, "mais", offer("COOP MAIS 3 PK", "Obs", 50.0)))
+        assertTrue(Parse.sameKind(pin, "mais", offer("SUKKERMAISKORN", "Extra", 19.9)))
+        assertTrue(!Parse.sameKind(pin, "mais", offer("COOP MAISKAKE", "Obs", 44.0)))
+        assertTrue(!Parse.sameKind(pin, "mais", offer("MAISCHIPS", "REMA 1000", 29.9)))
+        // Kyllingfilet picked: other fillets yes, wings and minced chicken no.
+        val fil = Parse.pinFromProduct(com.handleliste.app.data.Product("Ytterøy Kyllingfilet naturell", "Ytterøy", "950 g", 156.2, null, null))
+        assertTrue(Parse.sameKind(fil, "kylling", offer("KYLLINGFILET", "REMA 1000", 109.0, "Solvinge, 700 g")))
+        assertTrue(!Parse.sameKind(fil, "kylling", offer("KYLLINGVINGER/KLUBBER", "REMA 1000", 59.9)))
+        assertTrue(!Parse.sameKind(fil, "kylling", offer("KYLLINGKJØTTDEIG", "REMA 1000", 44.9)))
+    }
 }

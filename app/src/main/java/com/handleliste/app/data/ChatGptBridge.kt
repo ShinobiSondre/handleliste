@@ -49,11 +49,12 @@ object ChatGptBridge {
         "var bs=document.querySelectorAll('button, a, [role=\"button\"]');for(var x=0;x<bs.length;x++){var bt=(bs[x].innerText||'').trim();" +
         "if(bt.length<45&&/(avvis|reject|forbli utlogget|stay logged out|fortsett uten|continue without|ikke nå|not now|maybe later|kanskje senere)/i.test(bt)){bs[x].click();}" +
         // "Clear current chat?" (a new link while a chat is open): yes, start the new one.
-        "else if(/^(clear chat|clear|tøm chat|tøm chatten|tøm|slett chat|fjern chat|start new chat|ny chat)$/i.test(bt)&&bs[x].closest('[role=\"dialog\"],[role=\"alertdialog\"],[aria-modal=\"true\"],dialog')){bs[x].click();}}" +
+        "}" +
         // "Log in or sign up" sheets: close them (the X), we carry on logged out.
         "var dl=document.querySelectorAll('[role=\"dialog\"],dialog[open]');for(var y=0;y<dl.length;y++){var dt=dl[y].innerText||'';" +
         "if(/(log in|sign up|logg inn|registrer)/i.test(dt)&&!/(clear current chat|tøm)/i.test(dt)){var xb=dl[y].querySelector('button[aria-label*=\"lose\"],button[aria-label*=\"ukk\"],[data-testid=\"close-button\"]');if(xb)xb.click();}}" +
-        "var a=document.querySelectorAll('[data-message-author-role=\"assistant\"]');" +
+        "var a=document.querySelectorAll('[data-message-role=\"assistant\"]');" +
+        "if(!a.length)a=document.querySelectorAll('[data-message-author-role=\"assistant\"]');" +
         "if(!a.length)a=document.querySelectorAll('[data-turn=\"assistant\"]');" +
         "var out=[];for(var i=0;i<a.length;i++)out.push(a[i].innerText);" +
         "if(!out.length){var m=document.querySelectorAll('article .markdown, .markdown.prose');for(var j=0;j<m.length;j++)out.push(m[j].innerText);}" +
@@ -61,10 +62,11 @@ object ChatGptBridge {
         "if(!out.length&&document.body){var parts=document.body.innerText.split(/ChatGPT (?:said|sa):/);" +
         "for(var k=1;k<parts.length;k++){var t=parts[k].split(/(?:You said|Du sa):/)[0];" +
         "t=t.split(/(?:ChatGPT is AI and can make mistakes|ChatGPT can make mistakes|ChatGPT kan gjøre feil|ChatGPT er (?:KI|AI)|Chat with ChatGPT|Chat med ChatGPT|Ask anything|Spør om hva som helst|Log in|Sign up|Logg inn|Registrer deg|We use cookies|Vi bruker informasjonskapsler)/)[0];out.push(t.trim());}}" +
-        "var busy=!!document.querySelector('[data-testid=\"stop-button\"]');" +
+        "var busy=!!document.querySelector('[data-testid=\"stop-button\"],[data-message-streaming]');" +
         "var c=document.querySelector('#prompt-textarea')||document.querySelector('textarea');" +
         "var pending=c?((c.innerText||c.value||'').trim().length):0;" +
-        "var users=document.querySelectorAll('[data-message-author-role=\"user\"]').length;" +
+        "var users=document.querySelectorAll('[data-message-role=\"user\"],[data-message-author-role=\"user\"]').length;" +
+        "if(!users&&/\\/(uc|c)\\//.test(location.pathname))users=1;" +
         "return JSON.stringify({a:out,busy:busy,pending:pending,users:users,input:!!c,url:location.href,title:document.title," +
         "body:(document.body?document.body.innerText:'').slice(0,240)," +
         "tail:(document.body?document.body.innerText:'').slice(-300)," +
@@ -90,6 +92,13 @@ object ChatGptBridge {
         "if(e){try{e.focus();}catch(x){}['keydown','keypress','keyup'].forEach(function(t){e.dispatchEvent(new KeyboardEvent(t,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));});return 'enter';}" +
         "return 'none';})()"
 
+    /** Debug: show ChatGPT's hidden page (and make the chat see-through) to watch what it does. */
+    val seeThrough = MutableStateFlow(false)
+    fun setSeeThrough(on: Boolean) {
+        seeThrough.value = on
+        (web?.parent as? android.view.View)?.alpha = if (on) 0.6f else 0.01f
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun webView(a: Activity): WebView? {
         if (web != null && host?.get() === a) return web
@@ -101,7 +110,7 @@ object ChatGptBridge {
         val holder = object : FrameLayout(a) {
             override fun dispatchTouchEvent(ev: android.view.MotionEvent?) = false
             override fun onInterceptTouchEvent(ev: android.view.MotionEvent?) = false
-        }.apply { alpha = 0.01f; isClickable = false; isFocusable = false; importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
+        }.apply { alpha = if (seeThrough.value) 0.6f else 0.01f; isClickable = false; isFocusable = false; importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
         root.addView(holder, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         return WebView(a).apply {
             settings.javaScriptEnabled = true
@@ -132,8 +141,23 @@ object ChatGptBridge {
         error.value = null
         status.value = Status.THINKING
         pageUrl.value = url
-        w.loadUrl(url)
+        freshLoad(w, url)
         watch()
+    }
+
+    /**
+     * Every question is a brand-new, logged-out ChatGPT: cookies and site storage are wiped first,
+     * so ChatGPT never counts earlier chats and asks us to log in.
+     */
+    private fun freshLoad(w: WebView, url: String) {
+        w.loadUrl("about:blank") // so the previous answer can't be read while the new page loads
+        val cm = CookieManager.getInstance()
+        cm.removeAllCookies {
+            cm.flush()
+            android.webkit.WebStorage.getInstance().deleteAllData()
+            w.clearCache(false)
+            w.loadUrl(url)
+        }
     }
 
     fun reset() { poll?.cancel(); session.value = null; turns.value = emptyList(); status.value = Status.STARTING; error.value = null }
@@ -164,7 +188,7 @@ object ChatGptBridge {
         val url = android.net.Uri.parse("https://chatgpt.com/").buildUpon().appendQueryParameter("q", q).build().toString()
         pageUrl.value = url
         log("ask", "follow-up sent as a new link (${q.length} chars)")
-        w.loadUrl(url)
+        freshLoad(w, url)
         watch()
     }
 
@@ -213,6 +237,7 @@ object ChatGptBridge {
             var last = ""
             var stableSince = 0L
             var nudged = 0L
+            var nudges = 0
             var typed = false      // the question is typed in at most once (never twice into the chat)
             var snapshot = false   // one look at how the page is built, if no answer shows up
             while (true) {
@@ -238,11 +263,15 @@ object ChatGptBridge {
                 } else {
                     // The question is filled in but wasn't sent (happens when the page isn't on screen): press send.
                     val waited = System.currentTimeMillis() - t0
-                    if (o.optInt("pending") > 0 && waited > 4_000 && System.currentTimeMillis() - nudged > 5_000) {
+                    // ChatGPT sends a question from the link by itself (usually within 2 s). Only if it's still
+                    // sitting unsent and no conversation started after 10 s, press send (at most twice).
+                    if (o.optInt("pending") > 0 && o.optInt("users") == 0 && waited > 10_000 && nudges < 2 &&
+                        System.currentTimeMillis() - nudged > 8_000) {
+                        nudges++
                         nudged = System.currentTimeMillis()
                         w.evaluateJavascript(SEND) { r -> log("ask", "question was waiting unsent – pressed send ($r)") }
                     } else if (o.optInt("users") == 0 && o.optInt("pending") == 0 && o.optBoolean("input") &&
-                        waited > 6_000 && !typed && currentQ.isNotBlank()) {
+                        waited > 14_000 && !typed && currentQ.isNotBlank()) {
                         typed = true
                         // The link's question never arrived (e.g. a pop-up was in the way): type it in ourselves.
                         nudged = System.currentTimeMillis()

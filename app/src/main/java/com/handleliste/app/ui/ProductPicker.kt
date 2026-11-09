@@ -64,7 +64,9 @@ import com.handleliste.app.data.Parse
 import com.handleliste.app.data.Pin
 import com.handleliste.app.data.Product
 import com.handleliste.app.util.tr
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /** Which list item is having its product chosen (the picker covers the app while set). */
 object PickerUi { var itemId by mutableStateOf<String?>(null) }
@@ -82,10 +84,12 @@ fun ProductPicker() {
     var products by remember(id) { mutableStateOf<List<Product>>(emptyList()) }
     var loading by remember(id) { mutableStateOf(false) }
     var failed by remember(id) { mutableStateOf(false) }
-    val offers = remember(id, query) {
-        Parse.matchOffers(Parse.searchTerm(query), Flyers.cached(ctx)).let { first ->
-            // matchOffers keeps the 10 best; show more of them here.
-            if (first.size < 10) first else Flyers.cached(ctx).filter { o -> Parse.offerMatches(Parse.searchTerm(query), o) }.take(30)
+    var offers by remember(id) { mutableStateOf<List<Offer>>(emptyList()) }
+    LaunchedEffect(id, query) {
+        // Matching against this week's ~2000 offers runs off the main thread.
+        offers = withContext(Dispatchers.Default) {
+            val all = Flyers.cachedAsync(ctx)
+            Parse.matchOffers(Parse.searchTerm(query), all, limit = 30)
         }
     }
     LaunchedEffect(id, query) {
@@ -203,7 +207,7 @@ private fun Tile(image: String?, title: String, sub: String, price: String, pric
 
 @Composable
 private fun OfferTile(o: Offer, onClick: () -> Unit) {
-    val brand = o.description.lines().firstOrNull { it.contains(",") }?.substringBefore(",").orEmpty()
+    val brand = Parse.brandOf(o)
     Tile(o.image, o.heading.lowercase().replaceFirstChar { it.uppercase() }, listOf(o.store, brand).filter { it.isNotBlank() }.joinToString(" · "),
         kr(o.price), MaterialTheme.colorScheme.secondary, o.savingsPct?.takeIf { it in 1..95 }?.let { "−$it %" } ?: tr("Deal", "Tilbud"), onClick)
 }

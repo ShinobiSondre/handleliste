@@ -1,7 +1,9 @@
 package com.handleliste.app.data
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
@@ -26,7 +28,9 @@ object Prices {
 
     private fun isDinnerFood(o: Offer): Boolean {
         val h = (o.heading + " " + o.description.substringBefore("\n")).lowercase()
-        return DINNER.any { h.contains(it) } && !Regex("(?i)(sjampo|vaskemiddel|bleier|kattemat|hundemat|godteri|sjokolade|brus|øl)").containsMatchIn(h)
+        // Whole words or the start/end of a compound: "hakkede tomater", "kyllingfilet", but not "lakRISstang".
+        val words = h.split(Regex("[^\\p{L}]+"))
+        return words.any { w -> DINNER.any { w == it || w.startsWith(it) || w.endsWith(it) } } && !Regex("(?i)(sjampo|vaskemiddel|bleier|kattemat|hundemat|godteri|sjokolade|brus|øl)").containsMatchIn(h)
     }
 
     /** The cheapest dinner-type deals near you this week, for the AI to plan with. */
@@ -40,9 +44,9 @@ object Prices {
     }
 
     /** What each grocery costs now: cheapest deal near you, else the normal store price (MENY or Oda). */
-    suspend fun check(ctx: Context, items: List<String>): List<PriceLine> {
+    suspend fun check(ctx: Context, items: List<String>): List<PriceLine> = withContext(Dispatchers.Default) {
         val flyers = Flyers.cached(ctx)
-        return coroutineScope {
+        coroutineScope {
             items.map { item ->
                 async {
                     val term = Parse.searchTerm(item)

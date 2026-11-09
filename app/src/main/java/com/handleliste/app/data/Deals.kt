@@ -8,7 +8,9 @@ import androidx.compose.runtime.setValue
 import com.handleliste.app.util.Http
 import com.handleliste.app.util.HttpException
 import com.handleliste.app.util.tr
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -57,16 +59,16 @@ object Deals {
         val radius = Settings.radiusKm(ctx) * 1000
         val kassal = Settings.kassalKey(ctx)
         try {
+          // All the heavy work (downloading, reading and matching ~2000 offers) happens off the main thread,
+          // so the app never freezes while deals are checked.
+          val (found, failed) = withContext(Dispatchers.Default) {
+            var failedNow = false
             val flyers = runCatching { Flyers.near(ctx, la, ln, radius, force) }
-                .onFailure {
-                    error = tr("Couldn't reach the deals service. Check your internet and try again.",
-                        "Fikk ikke kontakt med tilbudstjenesten. Sjekk internett og prøv igjen.")
-                }.getOrDefault(emptyList())
-            chains = Flyers.chains
+                .onFailure { failedNow = true }.getOrDefault(emptyList())
             val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.ROOT)
                 .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
             val gate = Semaphore(3)
-            results = coroutineScope {
+            val res = coroutineScope {
                 items.distinctBy { it.name.lowercase() }.map { item ->
                     async {
                         val term = Parse.searchTerm(item.name)
@@ -76,7 +78,7 @@ object Deals {
                             (if (pin != null) Parse.matchOffers(pin.keywords.joinToString(" ").ifBlank { term }, flyers, now, limit = 40, anyWord = true) else emptyList())
                         val kind = all.distinctBy { it.id }
                         val mine = if (pin == null) kind.take(10) else kind.filter { Parse.pinMatches(pin, it) }.take(10)
-                        val others = if (pin == null) emptyList() else kind.filter { it !in mine && Parse.offerMatches(term, it) }.take(10)
+                        val others = if (pin == null) emptyList() else kind.filter { it !in mine && Parse.sameKind(pin, term, it) }.take(10)
                         val prices = if (kassal.isNotBlank()) gate.withPermit {
                             runCatching { kassalPrices(pin?.keywords?.take(3)?.joinToString(" ") ?: term, kassal) }.getOrDefault(emptyList())
                         } else emptyList()
@@ -84,7 +86,13 @@ object Deals {
                     }
                 }.awaitAll()
             }
-            if (flyers.isNotEmpty() || kassal.isNotBlank()) fetchedAt = System.currentTimeMillis()
+            Triple(res, failedNow, flyers.isNotEmpty())
+          }.let { (r, f, any) -> r to (f to any) }
+            results = found
+            chains = Flyers.chains
+            if (failed.first) error = tr("Couldn't reach the deals service. Check your internet and try again.",
+                "Fikk ikke kontakt med tilbudstjenesten. Sjekk internett og prøv igjen.")
+            if (failed.second || kassal.isNotBlank()) fetchedAt = System.currentTimeMillis()
         } finally {
             loading = false
         }

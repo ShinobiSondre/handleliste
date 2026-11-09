@@ -221,14 +221,17 @@ object Parse {
     fun matchOffers(term: String, offers: List<Offer>, nowIso: String = "", limit: Int = 10, anyWord: Boolean = false): List<Offer> {
         val words = term.lowercase().split(" ").filter { it.length >= 2 }
         if (words.isEmpty()) return emptyList()
+        val whole = words.map { Regex("(^|[^\\p{L}])" + Regex.escape(it) + "($|[^\\p{L}])") }
+        val split = Regex("[^\\p{L}]+")
         fun score(o: Offer): Int {
             val head = o.heading.lowercase()
             val desc = o.description.lowercase()
+            val headWords = head.split(split)
             var total = 0
-            for (w in words) {
+            for ((i, w) in words.withIndex()) {
                 total += when {
-                    Regex("(^|[^\\p{L}])" + Regex.escape(w) + "($|[^\\p{L}])").containsMatchIn(head) -> 6
-                    head.endsWith(w) || head.split(Regex("[^\\p{L}]+")).any { it.endsWith(w) } -> 4 // lettMELK
+                    whole[i].containsMatchIn(head) -> 6
+                    headWords.any { it.endsWith(w) } -> 4 // lettMELK
                     head.contains(w) -> 2 // sjokoMELKdrikk
                     desc.contains(w) -> 1
                     anyWord -> 0
@@ -298,10 +301,38 @@ object Parse {
 
     fun pinFromOffer(o: Offer): Pin {
         // Flyers put the brand first in the small print: "Solvinge, 400 g, 112,25 pr. kg".
-        val brand = o.description.lines().firstOrNull { it.contains(",") }?.substringBefore(",")?.trim()
-            ?.takeIf { it.length in 2..30 }.orEmpty()
+        val brand = brandOf(o)
         val name = o.heading.lowercase().replaceFirstChar { it.uppercase() }
         return Pin(if (brand.isNotBlank()) "$brand $name" else name, o.store, o.image, "deal", keywords("$brand $name"))
+    }
+
+    /** "3 x 198 g, Eldorado, pr. kg 50,30" → "Eldorado": the first part of the small print that's a name, not an amount. */
+    fun brandOf(o: Offer): String =
+        o.description.lines().flatMap { it.split(",") }.map { it.trim() }
+            .firstOrNull { it.length in 2..30 && it.none { c -> c.isDigit() } && it.any { c -> c.isLetter() } &&
+                !it.contains(Regex("(?i)(tilbud|kupp|maks|pr\\.|per |gjelder|velg|eller)")) }.orEmpty()
+
+    /**
+     * The word that says what kind of thing you picked: for "Eldorado Maiskorn" and the list item "Mais"
+     * it's "maiskorn", for "Ytterøy Kyllingfilet naturell" and "Kylling" it's "kyllingfilet".
+     */
+    fun coreWord(pin: Pin, term: String): String {
+        val t = term.lowercase().split(" ").filter { it.length >= 3 }.maxByOrNull { it.length } ?: term.lowercase()
+        return pin.keywords.firstOrNull { it.contains(t) } ?: pin.keywords.firstOrNull { t.contains(it) } ?: t
+    }
+
+    /**
+     * Other deals of the same kind as what you picked. With "Maiskorn" picked: other corn ("COOP MAIS 3 PK"),
+     * but not "MAISKAKE" or "MAISCHIPS", which only start with the same word.
+     */
+    fun sameKind(pin: Pin, term: String, o: Offer): Boolean {
+        val core = coreWord(pin, term)
+        val head = o.heading.lowercase()
+        val words = head.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        val t = term.lowercase().trim()
+        return words.any { it == core || it.endsWith(core) } ||       // maiskorn, sukkermaiskorn
+            words.any { it == t } ||                                   // "MAIS 3 PK"
+            (core != t && words.any { it.endsWith(t) && !it.startsWith(t) })  // lettMELK for "melk"
     }
 
     fun pinFromType(text: String) = Pin(text.trim().replaceFirstChar { it.uppercase() }, "", null, "type", keywords(text))
