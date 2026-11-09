@@ -13,7 +13,7 @@ import java.util.UUID
 
 data class Item(val id: String, val name: String, val checked: Boolean = false, val added: Long = System.currentTimeMillis(), val pin: Pin? = null)
 
-data class ShopList(val id: String, val name: String, val image: String? = null)
+data class ShopList(val id: String, val name: String, val image: String? = null, val recipe: String? = null)
 
 /**
  * Your shopping lists (Handleliste, Middag, Hytta …), saved on the phone.
@@ -53,7 +53,8 @@ object ListRepo {
             val arr = o.getJSONArray("lists")
             for (i in 0 until arr.length()) {
                 val l = arr.getJSONObject(i)
-                val meta = ShopList(l.getString("id"), l.getString("name"), l.optString("image").takeIf { it.startsWith("http") })
+                val meta = ShopList(l.getString("id"), l.getString("name"), l.optString("image").takeIf { it.startsWith("http") },
+                    l.optString("recipe").takeIf { it.isNotBlank() })
                 lists += meta
                 byList[meta.id] = items(l.optJSONArray("items"))
             }
@@ -79,7 +80,7 @@ object ListRepo {
                 its.put(JSONObject().put("id", it.id).put("name", it.name).put("checked", it.checked).put("added", it.added)
                     .put("pin", it.pin?.let { p -> pinJson(p) } ?: JSONObject.NULL))
             }
-            arr.put(JSONObject().put("id", meta.id).put("name", meta.name).put("image", meta.image ?: "").put("items", its))
+            arr.put(JSONObject().put("id", meta.id).put("name", meta.name).put("image", meta.image ?: "").put("recipe", meta.recipe ?: "").put("items", its))
         }
         val pins = JSONObject(); lastPins.forEach { (k, v) -> pins.put(k, pinJson(v)) }
         prefs().edit().putString("lists", JSONObject().put("lists", arr).put("current", currentId).put("pins", pins).toString()).apply()
@@ -123,13 +124,19 @@ object ListRepo {
     }
 
     /** A new list for a dish: its ingredients, with the dish's photo on the list. Opens it. */
-    fun newListFrom(name: String, items: List<String>, image: String?): String {
-        val meta = ShopList(UUID.randomUUID().toString(), name.trim().ifBlank { if (Lang.no) "Ny liste" else "New list" }, image)
+    fun newListFrom(name: String, items: List<String>, image: String?, recipe: String? = null): String {
+        val meta = ShopList(UUID.randomUUID().toString(), name.trim().ifBlank { if (Lang.no) "Ny liste" else "New list" }, image, recipe?.takeIf { it.isNotBlank() })
         lists += meta
         byList[meta.id] = mutableStateListOf()
         currentId = meta.id
         if (items.isNotEmpty()) add(items.joinToString(","), meta.id) else save()
         return meta.id
+    }
+
+    /** Adds, changes or (with blank text) removes a list's recipe. */
+    fun setRecipe(id: String, text: String?) {
+        val i = lists.indexOfFirst { it.id == id }
+        if (i >= 0) { lists[i] = lists[i].copy(recipe = text?.trim()?.takeIf { it.isNotEmpty() }); save() }
     }
 
     fun renameList(id: String, name: String) {

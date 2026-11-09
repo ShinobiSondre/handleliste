@@ -262,4 +262,33 @@ RETT: Kyllingtaco | HANDLE: lomper, rømme | BRUKER: kylling, mais
         val old = D.dishes("RETT: Taco | HANDLE: lomper | BRUKER: kjøttdeig, salsa").single()
         assertEquals(listOf("Kjøttdeig", "Salsa", "Lomper"), D.ingredientsForList(old, list))
     }
+
+    @Test fun recipePerDish() {
+        val D = com.handleliste.app.data.Dinner
+        val a = """Her er tre forslag:
+
+### 1. Tacogryte
+**Ingredienser**
+• 400 g kjøttdeig
+• tacochips
+**Fremgangsmåte**
+1. Stek kjøttdeigen.
+2. Topp med ost.
+
+### 2. Pestopasta
+Kok pasta, bland med pesto.
+
+### Handleoversikt
+Totalt 98 kr
+
+RETT: Tacogryte | HANDLE: rømme | BRUKER: kjøttdeig | ALT: kjøttdeig, tacochips | BILDE: taco
+RETT: Pestopasta | HANDLE: ingenting | BRUKER: pasta, pesto | ALT: pasta, pesto | BILDE: pesto pasta"""
+        val ds = D.dishes(a)
+        val taco = D.recipeFor(a, ds[0], ds)
+        assertTrue(taco.startsWith("### 1. Tacogryte"))
+        assertTrue(taco.contains("Stek kjøttdeigen") && taco.contains("Fremgangsmåte"))
+        assertTrue(!taco.contains("Pestopasta"))
+        val pesto = D.recipeFor(a, ds[1], ds)
+        assertTrue(pesto.contains("Kok pasta") && !pesto.contains("Handleoversikt") && !pesto.contains("RETT:"))
+    }
 }

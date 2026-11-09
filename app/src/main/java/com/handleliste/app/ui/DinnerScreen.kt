@@ -305,7 +305,7 @@ sealed class ChatEntry(val key: String) {
     class Msg(i: Int, val user: Boolean, val text: String) : ChatEntry("m$i")
     class Price(i: Int, val extra: List<String>, val fromList: List<String>) : ChatEntry("p$i")
     class Add(i: Int, val items: List<String>) : ChatEntry("a$i")
-    class Dishes(val turn: Int, val dishes: List<Dinner.Dish>) : ChatEntry("d$turn")
+    class Dishes(val turn: Int, val dishes: List<Dinner.Dish>, val answer: String) : ChatEntry("d$turn")
 }
 
 /** Whether the dinner chat is on screen (drawn over the whole app by MainActivity). */
@@ -345,7 +345,7 @@ fun DinnerChat(onClose: () -> Unit) {
             add(ChatEntry.Msg(i, t.user, if (t.user) t.text else Dinner.display(t.text)))
             val dishes = if (t.user) emptyList() else Dinner.dishes(t.text)
             if (!t.user && dishes.isNotEmpty() && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
-                add(ChatEntry.Dishes(i, dishes))
+                add(ChatEntry.Dishes(i, dishes, t.text))
             } else if (!t.user && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
                 val missing = Dinner.missing(t.text)
                 val fromList = if (ChatUi.budget != null) Dinner.usedFromList(t.text, listNames) else emptyList()
@@ -401,7 +401,7 @@ fun DinnerChat(onClose: () -> Unit) {
                         is ChatEntry.Msg -> Bubble(e.text, mine = e.user)
                         is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget ?: 0)
                         is ChatEntry.Add -> AddMissing(e.items)
-                        is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames)
+                        is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames, e.answer)
                     }
                 }
                 if (thinking) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
@@ -521,7 +521,7 @@ private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int)
  * missing for it, the button to add that to your list, and (budget dinners) the price check.
  */
 @Composable
-private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<String>) {
+private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<String>, answer: String) {
     val picked = ChatUi.pickedDish[turn] ?: if (dishes.size == 1) 0 else -1
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (dishes.size > 1) Text(tr("Which one do you want? Tap a dish", "Hvilken vil du lage? Trykk på en rett"),
@@ -539,7 +539,7 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
                     Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
                         Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
                 }
-                MakeListButton(d, fromList)
+                MakeListButton(d, Dinner.recipeFor(answer, d, dishes))
             }
         }
     }
@@ -547,19 +547,19 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
 
 /** "Lag liste": a new shopping list for the dish, with all its ingredients and its photo. */
 @Composable
-private fun MakeListButton(d: Dinner.Dish, fromList: List<String>) {
+private fun MakeListButton(d: Dinner.Dish, recipe: String) {
     var made by remember(d.name) { mutableStateOf(false) }
     OutlinedButton(
         onClick = {
             val items = Dinner.ingredientsForList(d, ChatUi.items().map { it.name })
-            ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name])
+            ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name], recipe)
             made = true
         },
         enabled = !made, modifier = Modifier.fillMaxWidth()
     ) {
         Icon(if (made) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
         Text(if (made) tr("New list \"${d.name}\" made", "Ny liste «${d.name}» er laget")
-            else tr("Make a shopping list for ${d.name}", "Lag handleliste for ${d.name}"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            else tr("Make a shopping list + recipe for ${d.name}", "Lag handleliste med oppskrift: ${d.name}"), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -675,7 +675,7 @@ private fun Bubble(text: String, mine: Boolean) {
 }
 
 /** Just enough Markdown for ChatGPT's answers: **bold**, ### headings, bullet lines. */
-private fun markdown(s: String): AnnotatedString = buildAnnotatedString {
+internal fun markdown(s: String): AnnotatedString = buildAnnotatedString {
     s.lines().forEachIndexed { i, raw ->
         if (i > 0) append("\n")
         var line = raw

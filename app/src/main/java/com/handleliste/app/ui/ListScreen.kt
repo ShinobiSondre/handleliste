@@ -93,6 +93,11 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.handleliste.app.data.ShopList
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import com.handleliste.app.data.History
 import com.handleliste.app.data.Suggestion
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -183,6 +188,10 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
                 Icon(Icons.Filled.Restaurant, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                 Text(tr("What can I make for dinner?", "Hva kan jeg lage til middag?"), maxLines = 1)
             }
+            ListRepo.current?.let { l ->
+                Spacer(Modifier.height(10.dp))
+                RecipeCard(l)
+            }
             if (suggestions.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
                 Suggestions(suggestions)
@@ -238,6 +247,65 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
             onDismiss = { editing = null },
             onSave = { ListRepo.renameList(l.id, it); editing = null },
             onDelete = if (ListRepo.lists.size > 1) ({ ListRepo.deleteList(l.id); editing = null }) else null)
+    }
+}
+
+/**
+ * The list's recipe: folded to a few lines, tap to read it all (big text, for cooking).
+ * Lists made from a dish get ChatGPT's recipe; any list can have one written or pasted in.
+ */
+@Composable
+private fun RecipeCard(l: ShopList) {
+    var open by remember(l.id) { mutableStateOf(false) }
+    var editing by remember(l.id) { mutableStateOf(false) }
+    val recipe = l.recipe
+    if (recipe == null) {
+        TextButton(onClick = { editing = true }) {
+            Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+            Text(tr("Add a recipe to this list", "Legg til oppskrift på listen"))
+        }
+    } else {
+        Surface(onClick = { open = !open }, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.tertiaryContainer,
+            modifier = Modifier.fillMaxWidth().animateContentSize()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.MenuBook, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Recipe", "Oppskrift"), style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { editing = true }) {
+                        Icon(Icons.Filled.Edit, tr("Edit recipe", "Rediger oppskrift"), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+                    Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
+                Text(markdown(recipe), color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    fontSize = if (open) 17.sp else 15.sp, lineHeight = if (open) 25.sp else 21.sp,
+                    maxLines = if (open) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis)
+                if (!open) Text(tr("Tap to read the whole recipe", "Trykk for å lese hele oppskriften"), fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f), modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+    }
+    if (editing) {
+        var text by remember(l.id) { mutableStateOf(recipe.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text(tr("Recipe for ${l.name}", "Oppskrift til ${l.name}")) },
+            text = {
+                OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 420.dp),
+                    placeholder = { Text(tr("Ingredients and steps …", "Ingredienser og fremgangsmåte …")) },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+            },
+            confirmButton = { TextButton(onClick = { ListRepo.setRecipe(l.id, text); editing = false }) { Text(tr("Save", "Lagre")) } },
+            dismissButton = {
+                Row {
+                    if (recipe != null) TextButton(onClick = { ListRepo.setRecipe(l.id, null); editing = false }) {
+                        Text(tr("Remove", "Fjern"), color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(onClick = { editing = false }) { Text(tr("Cancel", "Avbryt")) }
+                }
+            }
+        )
     }
 }
 

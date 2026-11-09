@@ -125,6 +125,42 @@ object Dinner {
         Dish(name, part("HANDLE", "BUY", "KJØP"), part("BRUKER", "USES"), img, part("ALT", "ALL", "INGREDIENSER", "INGREDIENTS"))
     }.distinctBy { it.name.lowercase() }.toList()
 
+    private fun isHeading(l: String): Boolean {
+        val t = l.trim()
+        return t.startsWith("#") || (t.startsWith("**") && t.endsWith("**") && t.length < 90) ||
+            Regex("^\\d+[.)]\\s+\\S").containsMatchIn(t) && t.length < 90
+    }
+
+    /**
+     * The recipe for one dish, cut out of ChatGPT's answer: from the heading that names the dish to
+     * the heading of the next dish. Without a matching heading: the whole answer.
+     */
+    fun recipeFor(answer: String, dish: Dish, all: List<Dish>): String {
+        val lines = display(answer).lines()
+        fun startOf(d: Dish): Int {
+            val words = Parse.keywords(d.name).filter { it.length >= 4 }.ifEmpty { Parse.keywords(d.name) }
+            var best = -1; var bestScore = 0.0
+            lines.forEachIndexed { i, l ->
+                if (!isHeading(l)) return@forEachIndexed
+                val h = l.lowercase()
+                val score = if (words.isEmpty()) 0.0 else words.count { h.contains(it) }.toDouble() / words.size
+                if (score > bestScore) { bestScore = score; best = i }
+            }
+            return if (bestScore >= 0.5) best else -1
+        }
+        val start = startOf(dish)
+        if (start < 0) return display(answer)
+        val next = all.filter { it != dish }.map { startOf(it) }.filter { it > start }.minOrNull() ?: lines.size
+        // Drop a closing shopping summary ("Handleoversikt", "Totalt") if the last dish runs to the end.
+        var end = next
+        if (next == lines.size) {
+            val summary = (start + 1 until lines.size).firstOrNull { i -> isHeading(lines[i]) &&
+                Regex("(?i)(handleoversikt|handleliste|oppsummering|totalt|total|shopping list|summary)").containsMatchIn(lines[i]) }
+            if (summary != null) end = summary
+        }
+        return lines.subList(start, end).joinToString("\n").trim()
+    }
+
     /** "Taco chips", "tacochips" and "2 pk Tacochips" are the same thing. */
     private fun same(a: String, b: String): Boolean {
         val x = Parse.searchTerm(a).replace(" ", "").replace("-", "")
