@@ -417,7 +417,8 @@ fun DinnerChat(onClose: () -> Unit) {
                         is ChatEntry.Msg -> Bubble(e.text, mine = e.user)
                         is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget)
                         is ChatEntry.Add -> AddMissing(e.items)
-                        is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames, e.answer)
+                        is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames, e.answer,
+                            latest = e.turn == entries.filterIsInstance<ChatEntry.Dishes>().lastOrNull()?.turn)
                     }
                 }
                 if (thinking) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
@@ -541,7 +542,7 @@ private fun PriceCheck(extra: List<String>, fromList: List<String>, budget: Int?
  * missing for it, the button to add that to your list, and (budget dinners) the price check.
  */
 @Composable
-private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<String>, answer: String) {
+private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<String>, answer: String, latest: Boolean) {
     val picked = ChatUi.pickedDish[turn] ?: if (dishes.size == 1) 0 else -1
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (dishes.size > 1) Text(tr("Which one do you want? Tap a dish", "Hvilken vil du lage? Trykk på en rett"),
@@ -554,34 +555,29 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
         }
         AnimatedVisibility(picked in dishes.indices, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             val d = dishes.getOrNull(picked) ?: return@AnimatedVisibility
-            val fromList = Dinner.usesFromList(d, listNames)
+            // Picking a dish fetches its full recipe straight away (the first answer is kept short so it's fast).
+            val turnsNow by ChatGptBridge.turns.collectAsState()
+            val status by ChatGptBridge.status.collectAsState()
+            val label = Dinner.recipeLabel(d)
+            val qi = turnsNow.indexOfLast { it.user && it.text == label }
+            val recipe = turnsNow.getOrNull(qi + 1)?.takeIf { qi >= 0 && !it.user && (qi + 1 < turnsNow.lastIndex || status == ChatGptBridge.Status.DONE) }
+                ?.text?.let { Dinner.display(it) }
+            LaunchedEffect(d.name, status) {
+                // Only for a dish you tapped, or the only dish in the newest answer (not old answers you scroll past).
+                val chosenByYou = ChatUi.pickedDish[turn] != null
+                if (qi < 0 && status == ChatGptBridge.Status.DONE && (chosenByYou || latest)) ChatGptBridge.followUp(label, Dinner.recipeQuestion(d))
+            }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // The app's own prices (this week's deals near you, else the normal store price) for every
-                // ingredient, not ChatGPT's guesses: split into what's on your list and what to buy.
-                val everything = Dinner.ingredientsForList(d, listNames)
+                // The app's own prices for every ingredient (from the full recipe once it's here), not ChatGPT's guesses.
+                val everything = Dinner.ingredientsForList(d, listNames, recipe)
                 val onList = everything.filter { it in listNames }
                 val extra = everything.filter { it !in listNames }
+                if (recipe == null) Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp))
+                    Text(tr("Getting the full recipe for ${d.name}…", "Henter hele oppskriften på ${d.name} …"), fontSize = 13.sp)
+                }
                 if (everything.isNotEmpty()) PriceCheck(extra, onList, ChatUi.budget)
-                if (d.buy.isNotEmpty()) AddMissing(d.buy, d.name)
-                else Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                    Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
-                        Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
-                }
-                // The recipe comes as a quick second question (the first answer is kept short so it's fast).
-                val turnsNow by ChatGptBridge.turns.collectAsState()
-                val status by ChatGptBridge.status.collectAsState()
-                val label = Dinner.recipeLabel(d)
-                val qi = turnsNow.indexOfLast { it.user && it.text == label }
-                val recipe = turnsNow.getOrNull(qi + 1)?.takeIf { qi >= 0 && !it.user && (qi + 1 < turnsNow.lastIndex || status == ChatGptBridge.Status.DONE) }?.text
-                if (recipe == null) {
-                    FilledTonalButton(onClick = { ChatGptBridge.followUp(label, Dinner.recipeQuestion(d)) },
-                        enabled = status != ChatGptBridge.Status.THINKING, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text(if (qi >= 0) tr("Getting the recipe…", "Henter oppskriften …") else tr("Get the recipe for ${d.name}", "Hent oppskriften på ${d.name}"),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                MakeListButton(d, recipe?.let { Dinner.display(it) }, asked = qi >= 0)
+                MakeListButton(d, recipe, asked = qi >= 0)
             }
         }
     }
@@ -607,8 +603,10 @@ private fun MakeListButton(d: Dinner.Dish, recipe: String?, asked: Boolean) {
     OutlinedButton(
         onClick = {
             if (recipe != null) make(recipe) else {
+                // The recipe is on its way (asked when you picked the dish): make the list when it's here.
                 ChatUi.pendingList = d.name
-                if (!asked) ChatGptBridge.followUp(Dinner.recipeLabel(d), Dinner.recipeQuestion(d))
+                if (!asked && ChatGptBridge.status.value != ChatGptBridge.Status.THINKING)
+                    ChatGptBridge.followUp(Dinner.recipeLabel(d), Dinner.recipeQuestion(d))
             }
         },
         enabled = !made && !waiting, modifier = Modifier.fillMaxWidth()
