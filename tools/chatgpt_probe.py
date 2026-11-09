@@ -34,7 +34,7 @@ with sync_playwright() as p:
         page = ctx.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
         t0 = time.time(); nudged = False; last = None
-        while time.time() - t0 < 60:
+        while time.time() - t0 < 90:
             time.sleep(1.5)
             try: o = json.loads(page.evaluate(READ))
             except Exception as e: note(f"run{run} read error", e); continue
@@ -42,7 +42,10 @@ with sync_playwright() as p:
             if o["a"] and not o["busy"] and len(o["a"][0]) > 40:
                 note(f"run{run} ANSWER after {time.time()-t0:.0f}s", o["a"][0][:600]); break
             if o["pending"] > 0 and time.time() - t0 > 6 and not nudged:
-                nudged = True; note(f"run{run} pending after 6s, pressing send", page.evaluate(SEND))
+                nudged = True
+                note(f"run{run} pending after 6s", {k: o.get(k) for k in ("users", "pending", "input", "url", "dialog")})
+                try: note(f"run{run} pressed send", page.evaluate(SEND))
+                except Exception as e: note(f"run{run} send navigated", str(e)[:120])
         else:
             note(f"run{run} NO ANSWER", {k: last.get(k) for k in ("users", "pending", "input", "busy", "url", "title", "dialog", "body", "tail")} if last else None)
         page.screenshot(path=f"run{run}.png")
