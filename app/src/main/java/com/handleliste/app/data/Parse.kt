@@ -332,6 +332,9 @@ object Parse {
      * that *is* the product ("Egg", "Egg Frittgående") beats one hidden inside another ("Truseinnlegg"),
      * and a brand you typed ("first price") has to match.
      */
+    /** "pålegg", "innlegg", "tillegg" end in "egg" but have nothing to do with eggs. */
+    private fun fakeEnd(word: String, w: String) = w == "egg" && word.endsWith("legg")
+
     fun rankProducts(query: String, products: List<Product>): List<Product> {
         val words = query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 2 }
         if (words.isEmpty()) return products
@@ -349,8 +352,8 @@ object Parse {
                     aw.any { it == w } -> 6                           // brand words: first, price
                     tw.any { it.startsWith(w) } -> 5                  // "eggerøre"
                     aw.any { it.startsWith(w) } -> 3
-                    tw.firstOrNull()?.endsWith(w) == true -> 2        // "Gårdsegg"
-                    aw.any { it.endsWith(w) } -> 1                    // "Truseinnlegg": last
+                    tw.firstOrNull()?.let { it.endsWith(w) && !fakeEnd(it, w) } == true -> 2   // "Gårdsegg"
+                    aw.any { it.endsWith(w) } -> 1                    // "Truseinnlegg", "Duopålegg": last
                     else -> return -1
                 }
             }
