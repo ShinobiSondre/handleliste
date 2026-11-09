@@ -124,8 +124,20 @@ object ChatGptBridge {
     val seeThrough = MutableStateFlow(false)
     fun setSeeThrough(on: Boolean) {
         seeThrough.value = on
-        (web?.parent as? android.view.View)?.alpha = if (on) 0.6f else 0.01f
+        (web?.parent as? android.view.View)?.let { place(it, on) }
     }
+
+    /**
+     * Where the hidden page sits. Android's WebView doesn't fully honour transparency, so the page
+     * showed faintly through the app. It's now moved down until only 2 pixels are left on screen
+     * (still "visible" to Android, so ChatGPT keeps writing), unless see-through mode is on.
+     */
+    private fun place(h: android.view.View, seeThrough: Boolean, hide: Boolean = !seeThrough && !fallback) {
+        h.alpha = if (seeThrough) 0.6f else 0.01f
+        h.translationY = if (hide) ((h.parent as? android.view.View)?.height ?: h.height).toFloat().let { (it - 2f).coerceAtLeast(0f) } else 0f
+    }
+    /** Set if ChatGPT stays silent while pushed down: then the page goes back on screen (at 1 %). */
+    @Volatile private var fallback = false
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun webView(a: Activity): WebView? {
@@ -144,6 +156,7 @@ object ChatGptBridge {
             setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
             alpha = if (seeThrough.value) 0.6f else 0.01f; isClickable = false; isFocusable = false; importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
         root.addView(holder, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        holder.post { place(holder, seeThrough.value) }
         return WebView(a).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -338,6 +351,11 @@ object ChatGptBridge {
                         nudged = System.currentTimeMillis()
                         log("ask", "question didn't arrive from the link – typing it in")
                         w.evaluateJavascript(typeJs(currentQ), null)
+                    }
+                    if (waited > 12_000 && !fallback && !seeThrough.value) {
+                        fallback = true
+                        (w.parent as? android.view.View)?.let { place(it, false, hide = false) }
+                        log("ask", "no answer while the page was pushed down – put it back on screen")
                     }
                     if (waited > 12_000 && !snapshot) {
                         snapshot = true

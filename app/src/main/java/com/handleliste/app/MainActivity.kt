@@ -61,6 +61,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Lang.init(this)
+        // Pictures load with the app's name as User-Agent: Wikimedia refuses anonymous image downloads.
+        coil.Coil.setImageLoader(coil.ImageLoader.Builder(this)
+            .okHttpClient {
+                okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+                    chain.proceed(chain.request().newBuilder()
+                        .header("User-Agent", "Handleliste/1.0 (Android; github.com/ShinobiSondre/handleliste)").build())
+                }.build()
+            }
+            .crossfade(true)
+            .build())
         ListRepo.init(this)
         StoreAlert.channels(this)
         enableEdgeToEdge()

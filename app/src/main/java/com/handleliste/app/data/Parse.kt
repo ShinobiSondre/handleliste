@@ -317,7 +317,8 @@ object Parse {
             if (it.optString("type") != "recipe") continue
             val a = it.optJSONObject("attributes") ?: continue
             listOf("feature_image_url", "image_url", "image").forEach { k ->
-                a.optString(k).takeIf { u -> u.startsWith("http") }?.let { u -> return u.replace("width=1000", "width=600") }
+                // Oda's picture links are signed: changing any part (like the width) makes them fail, so use as-is.
+                a.optString(k).takeIf { u -> u.startsWith("http") }?.let { u -> return u }
             }
             a.optJSONArray("images")?.optJSONObject(0)?.let { img ->
                 (img.optJSONObject("large")?.optString("url") ?: img.optString("url")).takeIf { u -> u.startsWith("http") }?.let { return it }
