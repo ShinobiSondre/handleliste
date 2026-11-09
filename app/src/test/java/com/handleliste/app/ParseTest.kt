@@ -198,4 +198,15 @@ class ParseTest {
         assertEquals(listOf("Pasta", "Mais"), com.handleliste.app.data.Dinner.usedFromList("Pasta med mais og ost.\nHANDLE: ost", list))
         assertTrue(com.handleliste.app.data.Dinner.usedFromList("BRUKER: ingen\nHANDLE: taco", list).isEmpty())
     }
+
+    @Test fun plainProducts() {
+        val lapskaus = offer("TRONDHJEMS LYS/BRUN LAPSKAUS OG SPAGHETTI A LA CAPRI", "Bunnpris", 59.0)
+        val spag = offer("BARILLA SPAGHETTI", "KIWI", 24.9)
+        assertTrue(!Parse.plainProduct("spaghetti", lapskaus))
+        assertTrue(Parse.plainProduct("spaghetti", spag))
+        assertTrue(Parse.plainProduct("hakkede tomater", offer("TOMATER HAKKEDE", "Bunnpris", 8.9)))
+        assertTrue(Parse.plainProduct("gulrøtter", offer("NORSKE GULRØTTER", "Extra", 12.9)))
+        // The plain product ranks above the combo even when the combo is cheaper.
+        assertEquals("BARILLA SPAGHETTI", Parse.matchOffers("spaghetti", listOf(lapskaus.copy(price = 9.0), spag)).first().heading)
+    }
 }

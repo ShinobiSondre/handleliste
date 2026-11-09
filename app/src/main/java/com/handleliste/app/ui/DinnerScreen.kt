@@ -69,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -238,6 +239,13 @@ fun DinnerScreen() {
     }
 }
 
+/** One thing in the chat list. */
+sealed class ChatEntry(val key: String) {
+    class Msg(i: Int, val user: Boolean, val text: String) : ChatEntry("m$i")
+    class Price(i: Int, val extra: List<String>, val fromList: List<String>) : ChatEntry("p$i")
+    class Add(i: Int, val items: List<String>) : ChatEntry("a$i")
+}
+
 /** Whether the dinner chat is on screen (drawn over the whole app by MainActivity). */
 object ChatUi {
     var open by mutableStateOf(false)
@@ -259,10 +267,27 @@ fun DinnerChat(onClose: () -> Unit) {
     // While ChatGPT writes, its half-finished answer is hidden behind a typing animation. The chat only
     // moves twice: down to the animation when you ask, and to the top of the answer when it's complete.
     val shown = if (thinking && turns.lastOrNull()?.user == false) turns.dropLast(1) else turns
+    val listNames = ListRepo.open.map { it.name }
+    // One entry per thing on screen: a bubble, a price check, an "add to list" card.
+    val entries = buildList {
+        shown.forEachIndexed { i, t ->
+            add(ChatEntry.Msg(i, t.user, if (t.user) t.text else Dinner.display(t.text)))
+            if (!t.user && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
+                val missing = Dinner.missing(t.text)
+                val fromList = if (ChatUi.budget != null) Dinner.usedFromList(t.text, listNames) else emptyList()
+                if (ChatUi.budget != null && (missing.isNotEmpty() || fromList.isNotEmpty())) add(ChatEntry.Price(i, missing, fromList))
+                if (missing.isNotEmpty()) add(ChatEntry.Add(i, missing))
+            }
+        }
+    }
     LaunchedEffect(shown.size, status) {
-        if (shown.isEmpty()) return@LaunchedEffect
-        if (thinking) listState.animateScrollToItem(shown.size) // the typing animation
-        else if (status == ChatGptBridge.Status.DONE && shown.lastOrNull()?.user == false) listState.animateScrollToItem(shown.lastIndex)
+        if (entries.isEmpty()) return@LaunchedEffect
+        if (thinking) listState.animateScrollToItem(entries.size) // the typing animation
+        else if (status == ChatGptBridge.Status.DONE) {
+            // The top of the newest answer, so you start reading from its beginning.
+            val idx = entries.indexOfLast { it is ChatEntry.Msg && !it.user }
+            if (idx >= 0) listState.animateScrollToItem(idx)
+        }
     }
     fun send(q: String) {
         if (q.isBlank() || thinking) return
@@ -275,6 +300,7 @@ fun DinnerChat(onClose: () -> Unit) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = if (seeThrough) 0.25f else 1f))
         .pointerInput(Unit) { detectTapGestures { } }) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+            Surface(color = MaterialTheme.colorScheme.background.copy(alpha = if (seeThrough) 0.6f else 1f)) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.Restaurant, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
@@ -292,18 +318,15 @@ fun DinnerChat(onClose: () -> Unit) {
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, tr("Close", "Lukk")) }
             }
-            LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                itemsIndexed(shown) { i, t ->
-                    if (t.user) Bubble(t.text, mine = true)
-                    else {
-                        Bubble(Dinner.display(t.text), mine = false)
-                        val missing = Dinner.missing(t.text)
-                        val last = i == shown.lastIndex
-                        val usesList = ChatUi.budget != null && Dinner.usedFromList(t.text, ListRepo.open.map { it.name }).isNotEmpty()
-                        if ((missing.isNotEmpty() || usesList) && (!last || status == ChatGptBridge.Status.DONE)) {
-                            if (ChatUi.budget != null) PriceCheck(missing, Dinner.usedFromList(t.text, ListRepo.open.map { it.name }), ChatUi.budget!!)
-                            if (missing.isNotEmpty()) AddMissing(missing)
-                        }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            LazyColumn(Modifier.weight(1f).clipToBounds(), state = listState,
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(entries, key = { it.key }) { e ->
+                    when (e) {
+                        is ChatEntry.Msg -> Bubble(e.text, mine = e.user)
+                        is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget ?: 0)
+                        is ChatEntry.Add -> AddMissing(e.items)
                     }
                 }
                 if (thinking) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
@@ -319,6 +342,8 @@ fun DinnerChat(onClose: () -> Unit) {
                     }
                 }
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(8.dp))
             if (status == ChatGptBridge.Status.DONE) {
                 val quick = (if (ChatUi.budget != null) listOf(tr("Even cheaper", "Enda billigere"), tr("Without meat", "Uten kjøtt")) else emptyList()) + listOf(
                     tr("Other ideas", "Andre forslag"), tr("Make it vegetarian", "Gjør det vegetar"),
@@ -451,9 +476,9 @@ private fun Typing(writing: Boolean) {
 @Composable
 private fun AddMissing(missing: List<String>) {
     var added by remember(missing) { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Text(tr("You'd still need: ", "Du mangler: ") + missing.joinToString(", "), color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Text(tr("You'd still need: ", "Du mangler: ") + missing.joinToString(", "), color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.height(6.dp))
             Button(onClick = { ListRepo.add(missing.joinToString(",")); added = true }, enabled = !added) {
                 Icon(Icons.Filled.AddShoppingCart, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))

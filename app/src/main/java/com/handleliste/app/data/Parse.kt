@@ -240,9 +240,14 @@ object Parse {
             }
             return total
         }
+        // Ready meals and combos ("lapskaus og spaghetti a la capri") rank below the plain product.
+        fun combo(o: Offer): Int {
+            val hw = o.heading.lowercase().split(split).filter { it.isNotBlank() }
+            return (if (hw.any { it in setOf("og", "med", "and", "with") } || o.heading.contains("/")) 3 else 0) + (hw.size - 3).coerceAtLeast(0)
+        }
         return offers.asSequence()
             .filter { nowIso.isEmpty() || it.runTill.isEmpty() || it.runTill >= nowIso }
-            .map { it to score(it) }.filter { it.second > 0 }
+            .map { o -> score(o).let { sc -> o to if (sc > 0) maxOf(1, sc - combo(o)) else 0 } }.filter { it.second > 0 }
             .sortedWith(compareByDescending<Pair<Offer, Int>> { it.second }.thenBy { it.first.price })
             .map { it.first }.distinctBy { it.store + "|" + it.heading.lowercase() + "|" + it.price }
             .take(limit).toList()
@@ -345,6 +350,18 @@ object Parse {
         val hits = words.count { hay.contains(it) }
         val need = if (pin.source == "type") words.size else maxOf(1, Math.ceil(words.size * 0.6).toInt())
         return hits >= need
+    }
+
+    /**
+     * Is this deal simply the product itself, good enough to price an ingredient with?
+     * "SPAGHETTI" or "BARILLA SPAGHETTI" yes; "LAPSKAUS OG SPAGHETTI A LA CAPRI" no.
+     */
+    fun plainProduct(term: String, o: Offer): Boolean {
+        val words = term.lowercase().split(" ").filter { it.length >= 3 }
+        if (words.isEmpty()) return false
+        val hw = o.heading.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        if (hw.size > 4 || hw.any { it in setOf("og", "med", "and", "with") }) return false
+        return words.all { w -> hw.any { it == w || it.endsWith(w) || (it.startsWith(w) && it.length <= w.length + 2) } }
     }
 
     /** Does a deal really belong to this list item? (Search results can be loose.) */

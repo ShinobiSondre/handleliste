@@ -53,7 +53,7 @@ object Prices {
                     val pin = pins[item]
                     val term = Parse.searchTerm(item)
                     val deal = Parse.matchOffers(term, flyers, limit = 40)
-                        .filter { pin == null || Parse.pinMatches(pin, it) }.minByOrNull { it.price }
+                        .filter { (pin == null || Parse.pinMatches(pin, it)) && Parse.plainProduct(term, it) }.minByOrNull { it.price }
                     if (deal != null) PriceLine(item, deal.price, deal.store, deal.heading.lowercase(), true)
                     else {
                         val p = runCatching { Catalog.search(pin?.name?.let { Parse.keywords(it).take(4).joinToString(" ") } ?: term) }.getOrDefault(emptyList())
