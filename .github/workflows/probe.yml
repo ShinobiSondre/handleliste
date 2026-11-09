@@ -1,0 +1,34 @@
+name: Probe APIs
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: probe
+        run: |
+          set +e
+          note() { echo "::notice title=$1::$(echo "$2" | tr '\n' ' ' | head -c 1500)"; }
+          L="r_lat=59.744&r_lng=10.204&r_radius=25000"
+          for host in squid-api.tjek.com api.etilbudsavis.dk api.etilbudsavis.no; do
+            for loc in nb_NO da_DK; do
+              r=$(curl -sS -m 20 "https://$host/v2/offers/search?$L&r_locale=$loc&api_av=0.3.0&query=melk&limit=5" -w " HTTP%{http_code}")
+              note "search $host $loc" "$(echo "$r" | head -c 600)"
+            done
+          done
+          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/catalogs?$L&r_locale=nb_NO&api_av=0.3.0&limit=40&types=paged,incito" -w " HTTP%{http_code}")
+          note "catalogs near Drammen" "$(echo "${r% HTTP*}" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d),[( (c.get("branding") or {}).get("name"), c.get("id"), c.get("offer_count"), c.get("run_till")) for c in d][:25])' 2>&1) ${r##* }"
+          cid=$(echo "${r% HTTP*}" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(next((c["id"] for c in d if (c.get("offer_count") or 0)>0),""))' 2>/dev/null)
+          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/offers?catalog_ids=$cid&limit=3&api_av=0.3.0" -w " HTTP%{http_code}")
+          note "offers in catalog $cid" "$(echo "$r" | head -c 1400)"
+          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/offers?$L&r_locale=nb_NO&api_av=0.3.0&limit=3" -w " HTTP%{http_code}")
+          note "offers near (no query)" "$(echo "$r" | head -c 800)"
+          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/dealers?$L&limit=50&api_av=0.3.0" -w " HTTP%{http_code}")
+          note "dealers" "$(echo "${r% HTTP*}" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d),[x.get("name") for x in d])' 2>&1 | head -c 900) ${r##* }"
+          q='[out:json][timeout:25];nwr(around:600,59.7440,10.2045)["shop"~"^(supermarket|convenience|grocery)$"];out center tags;'
+          for s in https://overpass-api.de/api/interpreter https://overpass.kumi.systems/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter https://overpass.private.coffee/api/interpreter; do
+            o=$(curl -sS -m 40 -A "Handleliste/1.0 (Android; github.com/ShinobiSondre/handleliste)" --data-urlencode "data=$q" "$s" -w " HTTP%{http_code}")
+            note "overpass $s" "$(echo "$o" | head -c 500) ... ${o##* }"
+          done
