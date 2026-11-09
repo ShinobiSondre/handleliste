@@ -174,6 +174,40 @@ object Dinner {
         return lines.subList(start, end).joinToString("\n").trim()
     }
 
+    private val UNITS = setOf("g", "gram", "kg", "hg", "dl", "l", "liter", "ml", "cl", "ss", "ts", "spiseskje", "spiseskjeer", "teskje", "teskjeer",
+        "stk", "stykk", "boks", "bokser", "pakke", "pakker", "pk", "pose", "poser", "beger", "fedd", "klype", "neve", "skive", "skiver",
+        "kopp", "kopper", "glass", "flaske", "bunt", "ca", "cirka", "liten", "lite", "små", "stor", "stort", "store", "middels", "evt", "eventuelt",
+        "cup", "cups", "tbsp", "tsp", "can", "cans", "pack", "packet", "bag", "jar", "slice", "slices", "clove", "cloves", "pinch", "small", "large", "medium", "x")
+    private val SKIP = setOf("vann", "water", "kaldt vann", "varmt vann")
+
+    /** "400 g kjøttdeig", "1 liten boks mais (ca. 200 g)", "2 ss tacokrydder, gjerne mild" → "Kjøttdeig", "Mais", "Tacokrydder". */
+    fun ingredientName(line: String): String? {
+        var t = line.trim().trimStart('•', '-', '*', '–', ' ').replace("**", "")
+        t = t.replace(Regex("\\([^)]*\\)"), " ").substringBefore(",").substringBefore(" – ").substringBefore(" - ")
+        t = t.replace(Regex("(?i)\\b(etter smak|til steking|til servering|til pynt|for serving|to taste)\\b.*"), "")
+        val words = t.trim().split(Regex("\\s+")).dropWhile { w ->
+            val l = w.lowercase().trimEnd('.', ':')
+            l.isEmpty() || l in UNITS || l.matches(Regex("[\\d.,/½¼¾⅓⅔–-]+")) || l.matches(Regex("\\d+[a-zæøå]{1,2}"))
+        }
+        val name = words.joinToString(" ").trim().trimEnd('.', ':', ';')
+        if (name.length < 2 || name.length > 45 || name.lowercase() in SKIP) return null
+        return name.replaceFirstChar { it.uppercase() }
+    }
+
+    /** The ingredients section of a recipe (between "Ingredienser" and "Fremgangsmåte"), one name per line. */
+    fun ingredientsFromRecipe(recipe: String): List<String> {
+        val lines = recipe.lines().map { it.trim() }
+        val start = lines.indexOfFirst { Regex("(?i)(ingrediens|ingredients|du trenger|you need)").containsMatchIn(it) && it.length < 60 }
+        if (start < 0) return emptyList()
+        val end = (start + 1 until lines.size).firstOrNull { i ->
+            Regex("(?i)^\\W*(fremgangsmåte|framgangsmåte|slik gjør du|tilberedning|method|instructions|directions|steps|steg|servering|tips)").containsMatchIn(lines[i])
+        } ?: lines.size
+        return lines.subList(start + 1, end)
+            .filter { it.isNotBlank() && !it.endsWith(":") && !Regex("(?i)^\\W*(til|for|topping|saus|sauce|dressing)\\W*$").matches(it) }
+            .mapNotNull { ingredientName(it) }
+            .fold(ArrayList<String>()) { acc, n -> if (acc.none { same(it, n) }) acc += n; acc }
+    }
+
     /** "Taco chips", "tacochips" and "2 pk Tacochips" are the same thing. */
     private fun same(a: String, b: String): Boolean {
         val x = Parse.searchTerm(a).replace(" ", "").replace("-", "")
@@ -189,8 +223,10 @@ object Dinner {
      * your list names it where it's the same thing, plus anything to buy that wasn't in "ALT".
      * Without an "ALT" line: what it uses from your list (matched or not) + what to buy.
      */
-    fun ingredientsForList(d: Dish, list: List<String>): List<String> {
-        val base = d.all.ifEmpty { d.uses + d.buy }
+    fun ingredientsForList(d: Dish, list: List<String>, recipe: String? = null): List<String> {
+        // The recipe's own ingredient list is the most complete; ChatGPT's ALT line fills in the rest.
+        val fromRecipe = recipe?.let { ingredientsFromRecipe(it) }.orEmpty()
+        val base = (fromRecipe + d.all.ifEmpty { d.uses + d.buy }).fold(ArrayList<String>()) { acc, n -> if (acc.none { same(it, n) }) acc += n; acc }
         val named = base.map { ing -> list.firstOrNull { same(it, ing) } ?: ing.replaceFirstChar { it.uppercase() } }
         val extra = d.buy.filter { b -> named.none { same(it, b) } }.map { it.replaceFirstChar { c -> c.uppercase() } }
         val out = ArrayList<String>()

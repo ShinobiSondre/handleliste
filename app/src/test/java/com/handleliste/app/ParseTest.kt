@@ -311,4 +311,38 @@ RETT: Pestopasta | HANDLE: ingenting | BRUKER: pasta, pesto | ALT: pasta, pesto 
         val b = com.handleliste.app.data.Dinner.budgetPrompt(100, 2, emptyList(), "", emptyList(), "", listOf("Kyllingwok"))
         assertTrue(b.contains("Kyllingwok"))
     }
+
+    @Test fun ingredientsFromRecipe() {
+        val D = com.handleliste.app.data.Dinner
+        val r = """Tacogryte
+
+Tid: 25 minutter
+
+Ingredienser (3–4 porsjoner)
+
+• 400 g kjøttdeig
+• 1 pose tortillachips
+• 1 liten boks mais (ca. 200 g)
+• 150 g revet ost
+• 2 dl rømme
+• 1 dl vann
+• 2 ss tacokrydder, gjerne mild
+• 1 ss olje
+
+Fremgangsmåte
+
+1. Varm olje i en gryte og brun kjøttdeigen."""
+        assertEquals(listOf("Kjøttdeig", "Tortillachips", "Mais", "Revet ost", "Rømme", "Tacokrydder", "Olje"), D.ingredientsFromRecipe(r))
+        val d = D.dishes("RETT: Tacogryte | HANDLE: tortillachips | BRUKER: kjøttdeig, mais | ALT: kjøttdeig, mais, tortillachips, salsa | BILDE: taco").single()
+        val items = D.ingredientsForList(d, listOf("Kjøttdeig", "Mais"), r)
+        assertTrue(items.containsAll(listOf("Kjøttdeig", "Tortillachips", "Mais", "Revet ost", "Rømme", "Tacokrydder", "Salsa")))
+        assertEquals(items.size, items.distinctBy { it.lowercase() }.size)
+    }
+
+    @Test fun eggIsNotPalegg() {
+        val offers = listOf(offer("DUOPÅLEGG", "KIWI", 29.9), offer("GÅRDSEGG", "KIWI", 59.9), offer("EGG FRITTGÅENDE", "REMA 1000", 39.9, "12 stk"),
+            offer("TRUSEINNLEGG", "Extra", 25.0))
+        assertEquals(listOf("EGG FRITTGÅENDE", "GÅRDSEGG"), Parse.matchOffers("egg", offers).map { it.heading })
+        assertTrue(!Parse.offerMatches("egg", offers[0]))
+    }
 }

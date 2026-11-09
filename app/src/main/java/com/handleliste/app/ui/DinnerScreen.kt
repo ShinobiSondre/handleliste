@@ -151,7 +151,7 @@ fun DinnerScreen() {
             (if (list.isNotEmpty()) "\n" + list.joinToString(", ") else "") +
             ""
         ChatGptBridge.reset()
-        ChatUi.pickedDish.clear()
+        ChatUi.pickedDish.clear(); ChatUi.madeLists.clear(); ChatUi.pendingList = null
         ChatUi.budget = null
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
@@ -175,7 +175,7 @@ fun DinnerScreen() {
             (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "") +
             (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
         ChatGptBridge.reset()
-        ChatUi.pickedDish.clear()
+        ChatUi.pickedDish.clear(); ChatUi.madeLists.clear(); ChatUi.pendingList = null
         ChatUi.budget = budget.toInt()
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
@@ -321,6 +321,9 @@ object ChatUi {
     /** Which lists the dinner is based on (empty = the list you're on). */
     val listIds = mutableStateListOf<String>()
     fun chosen(): List<String> = listIds.filter { id -> ListRepo.lists.any { it.id == id } }.ifEmpty { listOf(ListRepo.currentId) }
+    /** A list waiting for its dish's recipe to arrive (dish name), and dishes already made into lists. */
+    var pendingList by mutableStateOf<String?>(null)
+    val madeLists = mutableStateListOf<String>()
     /** Photos found for dishes (dish name → picture), used for a list made from a dish. */
     val dishPics = mutableStateMapOf<String, String>()
     /** Which dish you picked in each answer (answer index → dish index). */
@@ -578,27 +581,44 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                MakeListButton(d, recipe?.let { Dinner.display(it) } ?: Dinner.recipeFor(answer, d, dishes))
+                MakeListButton(d, recipe?.let { Dinner.display(it) }, asked = qi >= 0)
             }
         }
     }
 }
 
-/** "Lag liste": a new shopping list for the dish, with all its ingredients and its photo. */
+/**
+ * "Lag handleliste med oppskrift": a new list with every ingredient in the recipe and the recipe itself.
+ * If the recipe hasn't been fetched yet, it's fetched first and the list is made when it arrives.
+ */
 @Composable
-private fun MakeListButton(d: Dinner.Dish, recipe: String) {
-    var made by remember(d.name) { mutableStateOf(false) }
+private fun MakeListButton(d: Dinner.Dish, recipe: String?, asked: Boolean) {
+    val made = d.name in ChatUi.madeLists
+    val waiting = ChatUi.pendingList == d.name && recipe == null
+    fun make(text: String) {
+        val items = Dinner.ingredientsForList(d, ChatUi.items().map { it.name }, text)
+        ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name], text)
+        ChatUi.madeLists += d.name
+        ChatUi.pendingList = null
+    }
+    LaunchedEffect(recipe, ChatUi.pendingList) {
+        if (recipe != null && ChatUi.pendingList == d.name && !made) make(recipe)
+    }
     OutlinedButton(
         onClick = {
-            val items = Dinner.ingredientsForList(d, ChatUi.items().map { it.name })
-            ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name], recipe)
-            made = true
+            if (recipe != null) make(recipe) else {
+                ChatUi.pendingList = d.name
+                if (!asked) ChatGptBridge.followUp(Dinner.recipeLabel(d), Dinner.recipeQuestion(d))
+            }
         },
-        enabled = !made, modifier = Modifier.fillMaxWidth()
+        enabled = !made && !waiting, modifier = Modifier.fillMaxWidth()
     ) {
         Icon(if (made) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-        Text(if (made) tr("New list \"${d.name}\" made", "Ny liste «${d.name}» er laget")
-            else tr("Make a shopping list + recipe for ${d.name}", "Lag handleliste med oppskrift: ${d.name}"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(when {
+            made -> tr("New list \"${d.name}\" made", "Ny liste «${d.name}» er laget")
+            waiting -> tr("Getting the recipe, then making the list…", "Henter oppskriften og lager listen …")
+            else -> tr("Make a shopping list + recipe for ${d.name}", "Lag handleliste med oppskrift: ${d.name}")
+        }, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

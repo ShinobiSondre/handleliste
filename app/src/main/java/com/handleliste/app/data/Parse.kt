@@ -231,9 +231,9 @@ object Parse {
             for ((i, w) in words.withIndex()) {
                 total += when {
                     whole[i].containsMatchIn(head) -> 6
-                    headWords.any { it.endsWith(w) } -> 4 // lettMELK
-                    head.contains(w) -> 2 // sjokoMELKdrikk
-                    desc.contains(w) -> 1
+                    headWords.any { endsAs(it, w) } -> 4 // lettMELK, gårdsEGG (not pålEGG)
+                    containsReal(head, w) -> 2 // sjokoMELKdrikk
+                    containsReal(desc, w) -> 1
                     anyWord -> 0
                     else -> return 0 // every word must be there
                 }
@@ -335,6 +335,13 @@ object Parse {
     /** "pålegg", "innlegg", "tillegg" end in "egg" but have nothing to do with eggs. */
     private fun fakeEnd(word: String, w: String) = w == "egg" && word.endsWith("legg")
 
+    /** [word] ends in [w] as a real compound ("gårdsegg", "lettmelk"), not by accident ("pålegg"). */
+    fun endsAs(word: String, w: String) = word.endsWith(w) && !fakeEnd(word, w)
+
+    /** [text] contains [w] somewhere other than inside "-legg" words. */
+    fun containsReal(text: String, w: String): Boolean =
+        if (w == "egg") Regex("(?<!l)egg").containsMatchIn(text) else text.contains(w)
+
     fun rankProducts(query: String, products: List<Product>): List<Product> {
         val words = query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 2 }
         if (words.isEmpty()) return products
@@ -353,7 +360,8 @@ object Parse {
                     tw.any { it.startsWith(w) } -> 5                  // "eggerøre"
                     aw.any { it.startsWith(w) } -> 3
                     tw.firstOrNull()?.let { it.endsWith(w) && !fakeEnd(it, w) } == true -> 2   // "Gårdsegg"
-                    aw.any { it.endsWith(w) } -> 1                    // "Truseinnlegg", "Duopålegg": last
+                    aw.any { endsAs(it, w) } -> 1
+                    aw.any { it.endsWith(w) } -> 0                    // "Truseinnlegg", "Duopålegg": only if nothing better
                     else -> return -1
                 }
             }
@@ -406,9 +414,9 @@ object Parse {
         val head = o.heading.lowercase()
         val words = head.split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
         val t = term.lowercase().trim()
-        return words.any { it == core || it.endsWith(core) } ||       // maiskorn, sukkermaiskorn
+        return words.any { it == core || endsAs(it, core) } ||       // maiskorn, sukkermaiskorn
             words.any { it == t } ||                                   // "MAIS 3 PK"
-            (core != t && words.any { it.endsWith(t) && !it.startsWith(t) })  // lettMELK for "melk"
+            (core != t && words.any { endsAs(it, t) && !it.startsWith(t) })  // lettMELK for "melk"
     }
 
     fun pinFromType(text: String) = Pin(text.trim().replaceFirstChar { it.uppercase() }, "", null, "type", keywords(text))
@@ -432,7 +440,7 @@ object Parse {
         if (words.isEmpty()) return false
         val hw = o.heading.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
         if (hw.size > 4 || hw.any { it in setOf("og", "med", "and", "with") }) return false
-        return words.all { w -> hw.any { it == w || it.endsWith(w) || (it.startsWith(w) && it.length <= w.length + 2) } }
+        return words.all { w -> hw.any { it == w || endsAs(it, w) || (it.startsWith(w) && it.length <= w.length + 2) } }
     }
 
     /**
@@ -453,7 +461,7 @@ object Parse {
         val words = term.lowercase().split(" ").filter { it.length >= 3 }
         if (words.isEmpty()) return true
         val hay = (offer.heading + " " + offer.description).lowercase()
-        return words.all { hay.contains(it) }
+        return words.all { containsReal(hay, it) }
     }
 
     /** "REMA 1000", "Rema1000" and "rema" all become "rema1000"-ish keys that can be compared. */
