@@ -243,9 +243,14 @@ object ChatGptBridge {
             }
         }
         val ask = (if (no) "Nytt spørsmål: " else "New question: ") + send
-        val intro = if (no) "Fortsett samtalen under og svar på norsk." else "Continue the conversation below."
-        var out = firstQuestion.take(2500) + "\n\n" + intro + "\n\n" + past + ask
-        if (out.length > 6500) out = firstQuestion.take(1500) + "\n\n" + intro + "\n\n" + past.takeLast(3000) + ask.take(1500)
+        val intro = if (no) "Fortsett samtalen under og svar på norsk. Følg de samme reglene for hvordan svaret skal slutte som i det første spørsmålet (de siste linjene)."
+            else "Continue the conversation below. Follow the same rules for how the answer must end as in the first question (the last lines)."
+        // Keep the start AND the end of the first question: the end holds the rules for the answer's last
+        // lines (HANDLE:/BRUKER:), which the app turns into "add to list" and the price check.
+        fun first(max: Int) = if (firstQuestion.length <= max) firstQuestion
+            else firstQuestion.take(max * 55 / 100) + "\n…\n" + firstQuestion.takeLast(max * 45 / 100)
+        var out = first(2800) + "\n\n" + intro + "\n\n" + past + ask
+        if (out.length > 6500) out = first(2000) + "\n\n" + intro + "\n\n" + past.takeLast(3000) + ask.take(1500)
         return out
     }
 
