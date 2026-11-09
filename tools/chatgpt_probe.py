@@ -8,6 +8,7 @@ def kt_const(name):
     # Rebuild a Kotlin "a" + "b" string constant into JavaScript.
     start = src.index(f"private const val {name} =")
     body = src[start:src.index("\n\n", start)]
+    body = "\n".join(l for l in body.split("\n") if not l.strip().startswith("//"))
     out, i = [], body.index("=") + 1
     while True:
         q = body.find('"', i)
@@ -44,5 +45,6 @@ with sync_playwright() as p:
         else:
             note(f"run{run} NO ANSWER", {k: last.get(k) for k in ("users", "pending", "input", "busy", "url", "title", "dialog", "body", "tail")} if last else None)
         page.screenshot(path=f"run{run}.png")
+        note(f"run{run} cookies", [c["name"] for c in ctx.cookies()][:20])
         ctx.close()
     b.close()
