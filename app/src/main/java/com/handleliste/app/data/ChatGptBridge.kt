@@ -110,12 +110,17 @@ object ChatGptBridge {
         val holder = object : FrameLayout(a) {
             override fun dispatchTouchEvent(ev: android.view.MotionEvent?) = false
             override fun onInterceptTouchEvent(ev: android.view.MotionEvent?) = false
-        }.apply { alpha = if (seeThrough.value) 0.6f else 0.01f; isClickable = false; isFocusable = false; importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
+        }.apply {
+            // WebView draws itself outside its parent's alpha unless the parent has its own layer;
+            // without this the "hidden" ChatGPT page showed faintly through the app.
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+            alpha = if (seeThrough.value) 0.6f else 0.01f; isClickable = false; isFocusable = false; importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS }
         root.addView(holder, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         return WebView(a).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.userAgentString = settings.userAgentString.replace("; wv", "")
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
             webViewClient = WebViewClient()
