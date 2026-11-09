@@ -535,11 +535,11 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (ChatUi.budget != null && (d.buy.isNotEmpty() || fromList.isNotEmpty())) PriceCheck(d.buy, fromList, ChatUi.budget ?: 0)
                 if (d.buy.isNotEmpty()) AddMissing(d.buy, d.name)
-                MakeListButton(d, fromList)
                 else Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                     Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
                         Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
                 }
+                MakeListButton(d, fromList)
             }
         }
     }
