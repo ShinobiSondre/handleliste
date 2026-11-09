@@ -364,6 +364,19 @@ object Parse {
         return words.all { w -> hw.any { it == w || it.endsWith(w) || (it.startsWith(w) && it.length <= w.length + 2) } }
     }
 
+    /**
+     * Deals for one item: (deals on what you want, other deals of the same kind). With a picked product
+     * or type, only deals matching it count; without one, every deal on the item.
+     */
+    fun dealsFor(term: String, pin: Pin?, flyers: List<Offer>, nowIso: String = ""): Pair<List<Offer>, List<Offer>> {
+        val all = matchOffers(term, flyers, nowIso, limit = 40) +
+            (if (pin != null) matchOffers(pin.keywords.joinToString(" ").ifBlank { term }, flyers, nowIso, limit = 40, anyWord = true) else emptyList())
+        val kind = all.distinctBy { it.id }
+        val mine = if (pin == null) kind.take(10) else kind.filter { pinMatches(pin, it) }.take(10)
+        val others = if (pin == null) emptyList() else kind.filter { it !in mine && sameKind(pin, term, it) }.take(10)
+        return mine to others
+    }
+
     /** Does a deal really belong to this list item? (Search results can be loose.) */
     fun offerMatches(term: String, offer: Offer): Boolean {
         val words = term.lowercase().split(" ").filter { it.length >= 3 }

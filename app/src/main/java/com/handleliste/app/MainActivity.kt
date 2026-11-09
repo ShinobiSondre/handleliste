@@ -49,6 +49,8 @@ import com.handleliste.app.watch.StoreWatchService
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
+    private val openTab = androidx.compose.runtime.mutableIntStateOf(-1)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Lang.init(this)
@@ -57,9 +59,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         handle(intent)
         Updater.start(this)
+        com.handleliste.app.data.Alerts.schedule(this)
         setContent {
             HandlelisteTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
+                LaunchedEffect(openTab.intValue) { if (openTab.intValue >= 0) { tab = openTab.intValue; openTab.intValue = -1 } }
                 // Deals are checked by themselves: when the app opens and a moment after the lists change.
                 val openNames = ListRepo.open.map { it.name + "/" + it.pin?.name.orEmpty() }.sorted().joinToString("|")
                 LaunchedEffect(openNames) {
@@ -128,5 +132,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handle(intent: Intent?) {
         intent?.getStringExtra(StoreAlert.EXTRA_STORE)?.let { StoreAlert.splash = it }
+        // A deal notification opens the Deals tab.
+        intent?.getIntExtra(com.handleliste.app.data.Alerts.EXTRA_TAB, -1)?.takeIf { it >= 0 }?.let { openTab.intValue = it }
     }
 }

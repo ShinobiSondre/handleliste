@@ -57,6 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.handleliste.app.data.Catalog
+import com.handleliste.app.data.Alerts
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsNone
 import com.handleliste.app.data.Flyers
 import com.handleliste.app.data.ListRepo
 import com.handleliste.app.data.Offer
@@ -107,6 +110,7 @@ fun ProductPicker() {
                     Text(tr("Which one?", "Hvilken?"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(item.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                FollowButton(item.name, item.pin)
                 IconButton(onClick = { PickerUi.itemId = null }) { Icon(Icons.Filled.Close, tr("Close", "Lukk")) }
             }
             OutlinedTextField(
@@ -167,6 +171,32 @@ fun ProductPicker() {
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+    }
+}
+
+/** 🔔 "Tell me when it's on sale": follows the item (and the product you picked for it). */
+@Composable
+fun FollowButton(name: String, pin: Pin?, withLabel: Boolean = true) {
+    val ctx = LocalContext.current
+    val on = Alerts.follows.any { it.name.equals(name, true) }
+    val perm = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, label = "bell")
+    Surface(
+        onClick = {
+            if (on) Alerts.unfollow(ctx, name) else {
+                if (android.os.Build.VERSION.SDK_INT >= 33) perm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                Alerts.follow(ctx, name, pin)
+            }
+        },
+        shape = RoundedCornerShape(50), color = bg,
+        contentColor = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (on) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationsNone, null, Modifier.size(18.dp))
+            if (withLabel) { Spacer(Modifier.width(6.dp)); Text(if (on) tr("Following", "Følger") else tr("Alert me", "Varsle meg"), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
         }
     }
 }

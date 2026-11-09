@@ -1,6 +1,13 @@
 package com.handleliste.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material3.OutlinedTextField
+import com.handleliste.app.data.Alerts
+import com.handleliste.app.data.Parse
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material3.TextButton
@@ -89,6 +96,7 @@ fun DealsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var zoom by remember { mutableStateOf<Offer?>(null) }
+    var showFollows by remember { mutableStateOf(false) }
     // First row (with several lists): all lists, or one list. Second row: all stores, or one store.
     var listTab by rememberSaveable { mutableStateOf("") }
     if (listTab.isNotEmpty() && ListRepo.lists.none { it.id == listTab }) listTab = ""
@@ -113,6 +121,14 @@ fun DealsScreen() {
                         else -> tr("Checked automatically for your lists", "Sjekkes automatisk for listene dine")
                     }
                     Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Surface(onClick = { showFollows = true }, shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primaryContainer) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.NotificationsActive, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(4.dp))
+                        Text(tr("Alerts", "Varsler") + if (Alerts.follows.isNotEmpty()) " ${Alerts.follows.size}" else "",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
                 }
                 IconButton(onClick = { scope.launch { runDealsCheck(ctx, force = true) } }, enabled = !Deals.loading) {
                     Icon(Icons.Filled.Refresh, tr("Check again", "Sjekk igjen"))
@@ -194,6 +210,65 @@ fun DealsScreen() {
         }
     }
     zoom?.let { OfferImageViewer(it) { zoom = null } }
+    if (showFollows) FollowsSheet { showFollows = false }
+}
+
+/** Everything you follow for deal alerts: remove, or follow something new by name. */
+@Composable
+private fun FollowsSheet(onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    var name by remember { mutableStateOf("") }
+    val perm = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    Dialog(onDismissRequest = onClose) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(tr("Deal alerts", "Tilbudsvarsler"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onClose) { Icon(Icons.Filled.Close, tr("Close", "Lukk")) }
+                }
+                Text(tr("You get a notification when something you follow is on sale near you. Checked every 6 hours.",
+                    "Du får et varsel når noe du følger er på tilbud nær deg. Sjekkes hver 6. time."),
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(name, { name = it }, Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(14.dp),
+                        placeholder = { Text(tr("e.g. coffee, Jacobs pesto", "f.eks. kaffe, Jacobs pesto")) })
+                    Spacer(Modifier.width(6.dp))
+                    IconButton(onClick = {
+                        if (android.os.Build.VERSION.SDK_INT >= 33) perm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        val words = Parse.keywords(name)
+                        Alerts.follow(ctx, name, if (words.size >= 2) Parse.pinFromType(name) else null); name = ""
+                    }, enabled = name.isNotBlank()) { Icon(Icons.Filled.Add, tr("Follow", "Følg"), tint = MaterialTheme.colorScheme.primary) }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (Alerts.follows.isEmpty()) {
+                    Text(tr("Nothing yet. Tap 🔔 on an item, or add one above.", "Ingenting ennå. Trykk 🔔 på en vare, eller legg til over."),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
+                }
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    Alerts.follows.forEach { f ->
+                        val onSale = Deals.results.firstOrNull { it.item.equals(f.name, true) }?.offers?.minByOrNull { it.price }
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(Color.White), contentAlignment = Alignment.Center) {
+                                if (f.pin?.image != null) AsyncImage(f.pin.image, null, Modifier.fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+                                else Icon(Icons.Filled.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(f.name, fontWeight = FontWeight.SemiBold)
+                                Text(f.pin?.name ?: tr("Any kind", "Alle typer"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (onSale != null) Text("🏷️ ${kr(onSale.price)} · ${onSale.store}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
+                            }
+                            TextButton(onClick = { Alerts.unfollow(ctx, f.name) }) { Text(tr("Stop", "Stopp")) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -290,7 +365,11 @@ private fun ItemDealsCard(d: ItemDeals, onImage: (Offer) -> Unit) {
                     Spacer(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(d.item, style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(d.item, style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.width(6.dp))
+                        FollowButton(d.item, d.pin, withLabel = false)
+                    }
                     d.pin?.let { Text(tr("Only: ", "Bare: ") + it.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 if (d.offers.isNotEmpty()) {

@@ -68,6 +68,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     // Location for "am I in a store?" (battery-friendly fused location)
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Background check for deals on things you follow
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

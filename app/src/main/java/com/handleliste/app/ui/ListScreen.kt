@@ -64,6 +64,7 @@ import com.handleliste.app.data.ListRepo
 import com.handleliste.app.data.Settings
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.outlined.ImageSearch
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.handleliste.app.data.ShopList
@@ -369,13 +370,19 @@ fun ItemRow(item: Item, big: Boolean = false) {
                 Spacer(Modifier.width(10.dp))
             }
             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     item.name, fontSize = if (big) 22.sp else 17.sp,
                     fontWeight = if (big) FontWeight.SemiBold else FontWeight.Normal,
                     textDecoration = if (item.checked) TextDecoration.LineThrough else null,
                     color = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
                 )
+                if (com.handleliste.app.data.Alerts.isFollowed(item.name)) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Filled.NotificationsActive, tr("Following deals", "Følger tilbud"), Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                }
                 if (pin != null) {
                     Text(pin.name + if (pin.detail.isNotBlank()) " · ${pin.detail}" else "", fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)

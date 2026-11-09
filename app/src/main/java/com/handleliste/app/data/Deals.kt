@@ -74,11 +74,8 @@ object Deals {
                         val term = Parse.searchTerm(item.name)
                         val pin = item.pin
                         // Everything of this kind on sale, then split by what you picked.
-                        val all = Parse.matchOffers(term, flyers, now, limit = 40) +
-                            (if (pin != null) Parse.matchOffers(pin.keywords.joinToString(" ").ifBlank { term }, flyers, now, limit = 40, anyWord = true) else emptyList())
-                        val kind = all.distinctBy { it.id }
-                        val mine = if (pin == null) kind.take(10) else kind.filter { Parse.pinMatches(pin, it) }.take(10)
-                        val others = if (pin == null) emptyList() else kind.filter { it !in mine && Parse.sameKind(pin, term, it) }.take(10)
+                        // Everything of this kind on sale, then split by what you picked.
+                        val (mine, others) = Parse.dealsFor(term, pin, flyers, now)
                         val prices = if (kassal.isNotBlank()) gate.withPermit {
                             runCatching { kassalPrices(pin?.keywords?.take(3)?.joinToString(" ") ?: term, kassal) }.getOrDefault(emptyList())
                         } else emptyList()

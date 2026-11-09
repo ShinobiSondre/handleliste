@@ -103,6 +103,7 @@ object ListRepo {
         val (l, i) = find(id) ?: return
         l[i] = l[i].copy(pin = pin)
         if (pin != null) lastPins[l[i].name.lowercase()] = pin else lastPins.remove(l[i].name.lowercase())
+        Alerts.pinChanged(app, l[i].name, pin)
         save()
     }
 
