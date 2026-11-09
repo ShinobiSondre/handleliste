@@ -25,7 +25,8 @@ object History {
             o.keys().forEach { k ->
                 val h = o.getJSONObject(k)
                 val b = h.optJSONArray("b") ?: JSONArray()
-                habits[k] = Habit(h.optString("n"), (0 until b.length()).map { b.getLong(it) }, h.optInt("a"))
+                val t = h.optJSONArray("t") ?: JSONArray()
+                habits[k] = Habit(h.optString("n"), (0 until b.length()).map { b.getLong(it) }, h.optInt("a"), (0 until t.length()).map { t.getLong(it) })
             }
         }
     }
@@ -33,7 +34,7 @@ object History {
     private fun save(ctx: Context) {
         val o = JSONObject()
         habits.forEach { (k, h) ->
-            o.put(k, JSONObject().put("n", h.name).put("a", h.adds).put("b", JSONArray(h.buys)))
+            o.put(k, JSONObject().put("n", h.name).put("a", h.adds).put("b", JSONArray(h.buys)).put("t", JSONArray(h.addTimes)))
         }
         prefs(ctx).edit().putString("habits", o.toString()).apply()
         version++
@@ -55,8 +56,7 @@ object History {
     fun added(ctx: Context, name: String) {
         load(ctx)
         val k = Suggest.key(name)
-        val h = habits[k]
-        habits[k] = Habit(name, h?.buys.orEmpty(), (h?.adds ?: 0) + 1)
+        habits[k] = Suggest.added(habits[k], name, System.currentTimeMillis())
         save(ctx)
     }
 

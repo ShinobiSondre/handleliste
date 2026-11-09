@@ -89,22 +89,35 @@ class ParseTest {
     }
 
     @Test fun suggestions() {
+        val S = com.handleliste.app.data.Suggest
         val day = 24 * 3600 * 1000L
         val now = 100 * day
-        val milk = com.handleliste.app.data.Habit("Melk", listOf(now - 12 * day, now - 8 * day, now - 4 * day), 3)   // every 4 days, due now
-        val coffee = com.handleliste.app.data.Habit("Kaffe", listOf(now - 15 * day, now - 1 * day), 2)               // every 14 days, not due
-        val once = com.handleliste.app.data.Habit("Safran", listOf(now - 3 * day), 0)                                 // bought once: no
-        val old = com.handleliste.app.data.Habit("Julebrus", listOf(now - 90 * day, now - 88 * day), 2)              // stopped buying
-        val s = com.handleliste.app.data.Suggest.suggestions(listOf(milk, coffee, once, old), emptySet(), now)
+        fun h(name: String, vararg daysAgo: Int) = com.handleliste.app.data.Habit(name, emptyList(), 0, daysAgo.map { now - it * day }.sorted())
+        val milk = h("Melk", 12, 8, 4)          // put on a list every 4 days: due now
+        val coffee = h("Kaffe", 15, 1)          // every 14 days: not due yet
+        val once = h("Safran", 3)               // only once: no habit, not suggested
+        val old = h("Julebrus", 90, 88)         // stopped buying it
+        val s = S.suggestions(listOf(milk, coffee, once, old), emptySet(), now)
         assertEquals(listOf("Melk", "Kaffe"), s.map { it.name })
         assertTrue(s[0].due); assertEquals(4, s[0].everyDays); assertTrue(!s[1].due)
         // Already on a list: not suggested.
-        assertEquals(listOf("Kaffe"), com.handleliste.app.data.Suggest.suggestions(listOf(milk, coffee), setOf("melk"), now).map { it.name })
+        assertEquals(listOf("Kaffe"), S.suggestions(listOf(milk, coffee), setOf("melk"), now).map { it.name })
+        // Added and ticked in the same trip, even several times that day: still just one occasion.
+        var x: com.handleliste.app.data.Habit? = null
+        x = S.added(x, "Ost", now - 2 * day); x = S.added(x, "Ost", now - 2 * day + 3600_000)
+        x = S.bought(x, "Ost", now - 2 * day + 7200_000)
+        assertEquals(1, x.addTimes.size)
+        assertTrue(S.suggestions(listOf(x), emptySet(), now).isEmpty())
+        // Old saved data that only has the old counter and ticks: not enough on its own.
+        assertTrue(S.suggestions(listOf(com.handleliste.app.data.Habit("Brød", listOf(now - 9 * day, now - 2 * day), 5)), emptySet(), now).isEmpty())
+        // Put on a list again another day: now it's a habit.
+        x = S.added(x, "Ost", now - day)
+        assertEquals(listOf("Ost"), S.suggestions(listOf(x), emptySet(), now).map { it.name })
         // Ticking twice in one trip counts once; un-ticking right away undoes it.
-        val h = com.handleliste.app.data.Suggest.bought(milk, "Melk", now)
-        assertEquals(4, h.buys.size)
-        assertEquals(4, com.handleliste.app.data.Suggest.bought(h, "Melk", now + 3600_000).buys.size)
-        assertEquals(3, com.handleliste.app.data.Suggest.unbought(h, now + 60_000).buys.size)
+        val b = S.bought(milk, "Melk", now)
+        assertEquals(1, b.buys.size)
+        assertEquals(1, S.bought(b, "Melk", now + 3600_000).buys.size)
+        assertEquals(0, S.unbought(b, now + 60_000).buys.size)
     }
 
     @Test fun dinnerBuyLine() {
