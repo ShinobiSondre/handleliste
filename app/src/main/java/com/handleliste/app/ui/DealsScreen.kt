@@ -1,6 +1,7 @@
 package com.handleliste.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Add
@@ -171,7 +172,7 @@ fun DealsScreen() {
             }
 
             if (tab.isEmpty()) {
-                items(results.sortedByDescending { it.offers.size }, key = { it.item }) { ItemDealsCard(it) { o -> zoom = o } }
+                items(results.sortedByDescending { it.offers.size }, key = { it.item }) { Box(Modifier.animateItem()) { ItemDealsCard(it) { o -> zoom = o } } }
             } else {
                 val here = results.flatMap { d -> d.offers.filter { it.store == tab }.map { d.item to it } }
                 item {
@@ -287,10 +288,12 @@ private fun ListTab(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun StoreTab(label: String, count: Int?, selected: Boolean, onClick: () -> Unit) {
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "store")
+    val fg by androidx.compose.animation.animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "storeText")
     Surface(
         onClick = onClick, shape = RoundedCornerShape(50),
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        color = bg,
+        contentColor = fg,
         tonalElevation = 1.dp
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -418,7 +421,8 @@ private fun ItemDealsCard(d: ItemDeals, onImage: (Offer) -> Unit) {
 @Composable
 private fun OfferRow(o: Offer, forItem: String? = null, onImage: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).background(Color.White).clickable(onClick = onImage), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(Color.White)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)).clickable(onClick = onImage), contentAlignment = Alignment.Center) {
             if (o.image != null) AsyncImage(o.image, tr("Show larger", "Vis større"), Modifier.size(60.dp), contentScale = ContentScale.Fit)
             else Text("🏷️", fontSize = 22.sp)
         }
@@ -435,7 +439,10 @@ private fun OfferRow(o: Offer, forItem: String? = null, onImage: () -> Unit) {
             o.prePrice?.let {
                 Text(kr(it), fontSize = 12.sp, textDecoration = TextDecoration.LineThrough, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            o.savingsPct?.let { if (it in 1..95) Text("−$it %", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary) }
+            o.savingsPct?.let {
+                if (it in 1..95) Text("−$it %", Modifier.padding(top = 2.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.secondary)
+                    .padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondary)
+            }
         }
     }
 }

@@ -1,6 +1,31 @@
 package com.handleliste.app.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -99,30 +124,19 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp)) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(tr("Shopping list", "Handleliste"), style = MaterialTheme.typography.headlineMedium)
-                    Text(
-                        when (open.size) {
-                            0 -> tr("Nothing to buy yet", "Ingenting å kjøpe ennå")
-                            1 -> tr("1 thing to buy", "1 ting å kjøpe")
-                            else -> tr("${open.size} things to buy", "${open.size} ting å kjøpe")
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                WatchPill(onClick = onSettings)
-            }
+            Hero(open.size, done.size, ListRepo.current?.name.orEmpty(), onSettings)
             Spacer(Modifier.height(12.dp))
             // One tab per list; hold a tab to rename or delete it.
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ListRepo.lists, key = { it.id }) { l ->
                     val selected = l.id == ListRepo.currentId
                     val count = ListRepo.itemsOf(l.id).count { !it.checked }
+                    val bg by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, tween(250), label = "tab")
+                    val fg by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, tween(250), label = "tabText")
                     Surface(
                         shape = RoundedCornerShape(50),
-                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        color = bg,
+                        contentColor = fg,
                         tonalElevation = 1.dp,
                         modifier = Modifier.clip(RoundedCornerShape(50))
                             .combinedClickable(onClick = { ListRepo.select(l.id) }, onLongClick = { editing = l })
@@ -200,7 +214,7 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
             item { EmptyList() }
         }
 
-        items(open, key = { it.id }) { ItemRow(it) }
+        items(open, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it) } }
 
         if (done.isNotEmpty()) {
             item(key = "done-header") {
@@ -210,7 +224,7 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
                     TextButton(onClick = { ListRepo.clearChecked() }) { Text(tr("Clear", "Fjern")) }
                 }
             }
-            items(done, key = { it.id }) { ItemRow(it) }
+            items(done, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it) } }
         }
     }
 
@@ -311,16 +325,80 @@ private fun Suggestions(list: List<Suggestion>) {
     }
 }
 
+/** The top of the list: greeting, list name, a progress ring that fills as you tick things off. */
 @Composable
-private fun WatchPill(onClick: () -> Unit) {
+private fun Hero(open: Int, done: Int, listName: String, onSettings: () -> Unit) {
+    val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+    val greet = when (hour) {
+        in 5..9 -> tr("Good morning", "God morgen")
+        in 10..16 -> tr("Hi there", "Hei")
+        in 17..21 -> tr("Good evening", "God kveld")
+        else -> tr("Late-night shopping?", "Sen handletur?")
+    }
+    val total = open + done
+    val progress by animateFloatAsState(if (total == 0) 0f else done.toFloat() / total, tween(700, easing = FastOutSlowInEasing), label = "progress")
+    val dark = isSystemInDarkTheme()
+    Box(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
+            .background(Brush.linearGradient(if (dark) listOf(Color(0xFF1E5A3B), Color(0xFF0F3322)) else listOf(Color(0xFF2E9E66), Color(0xFF145C39))))
+    ) {
+        // Soft decorative circles.
+        Canvas(Modifier.matchParentSize()) {
+            drawCircle(Color.White.copy(alpha = 0.07f), radius = size.height * 0.9f, center = Offset(size.width * 0.95f, -size.height * 0.1f))
+            drawCircle(Color.White.copy(alpha = 0.05f), radius = size.height * 0.55f, center = Offset(size.width * 0.12f, size.height * 1.15f))
+        }
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(greet, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(listName.ifBlank { tr("Shopping list", "Handleliste") }, color = Color.White, fontSize = 28.sp,
+                    fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(2.dp))
+                AnimatedContent(open, transitionSpec = { (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut()) }, label = "count") { n ->
+                    Text(
+                        when (n) {
+                            0 -> if (total > 0) tr("All done 🎉", "Alt er handlet 🎉") else tr("Nothing to buy yet", "Ingenting å kjøpe ennå")
+                            1 -> tr("1 thing to buy", "1 ting å kjøpe")
+                            else -> tr("$n things to buy", "$n ting å kjøpe")
+                        },
+                        color = Sun, fontSize = 15.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                WatchPill(onClick = onSettings, onDark = true)
+            }
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.size(78.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val w = 8.dp.toPx()
+                    drawArc(Color.White.copy(alpha = 0.18f), 0f, 360f, false, style = Stroke(w, cap = StrokeCap.Round),
+                        topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w))
+                    drawArc(Sun, -90f, 360f * progress, false, style = Stroke(w, cap = StrokeCap.Round),
+                        topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w))
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("$done/$total", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                    Text(tr("in cart", "i kurven"), color = Color.White.copy(alpha = 0.75f), fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WatchPill(onClick: () -> Unit, onDark: Boolean = false) {
     val on = WatchState.on
     Surface(
         onClick = onClick, shape = RoundedCornerShape(50),
-        color = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+        color = when {
+            onDark -> Color.White.copy(alpha = if (on) 0.22f else 0.12f)
+            on -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        },
+        contentColor = if (onDark) Color.White else MaterialTheme.colorScheme.onSurface
     ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (on) Icons.Filled.LocationOn else Icons.Outlined.LocationOff, null, Modifier.size(16.dp),
-                tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                tint = if (onDark) (if (on) Sun else Color.White.copy(alpha = 0.7f)) else if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(4.dp))
             Text(if (on) tr("Store alert on", "Butikkvarsel på") else tr("Store alert off", "Butikkvarsel av"),
                 fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -331,7 +409,9 @@ private fun WatchPill(onClick: () -> Unit) {
 @Composable
 private fun EmptyList() {
     Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(84.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+        val float = rememberInfiniteTransition(label = "float")
+        val dy by float.animateFloat(-5f, 5f, infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "dy")
+        Box(Modifier.offset(y = dy.dp).size(84.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.ShoppingCart, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.height(14.dp))
@@ -345,11 +425,18 @@ private fun EmptyList() {
 fun ItemRow(item: Item, big: Boolean = false) {
     val deal = Deals.results.firstOrNull { it.item == item.name }?.offers?.minByOrNull { it.price }
     val pin = item.pin
+    // Ticking an item: a quick pop, then it settles slightly faded.
+    val fade by animateFloatAsState(if (item.checked) 0.62f else 1f, tween(300), label = "fade")
+    var popped by remember(item.id) { mutableStateOf(item.checked) }
+    val pop by animateFloatAsState(if (popped != item.checked) 1.04f else 1f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium), label = "pop",
+        finishedListener = { popped = item.checked })
     Surface(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp).animateContentSize(),
-        shape = RoundedCornerShape(14.dp),
+        Modifier.fillMaxWidth().padding(vertical = 3.dp).graphicsLayer { alpha = fade; scaleX = pop; scaleY = pop }.animateContentSize(),
+        shape = RoundedCornerShape(16.dp),
         color = if (item.checked) Color.Transparent else MaterialTheme.colorScheme.surface,
         tonalElevation = if (item.checked) 0.dp else 1.dp,
+        shadowElevation = if (item.checked || big) 0.dp else 1.dp,
     ) {
         Row(
             // In the list, tapping an item lets you choose exactly which product; in the store, it ticks it off.

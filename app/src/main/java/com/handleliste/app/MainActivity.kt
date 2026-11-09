@@ -23,6 +23,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -96,7 +103,13 @@ class MainActivity : ComponentActivity() {
                         }
                     ) { pad ->
                         Box(Modifier.padding(pad)) {
-                            when (tab) {
+                          // Tabs slide in from the side they're on.
+                          AnimatedContent(tab, transitionSpec = {
+                              val dir = if (targetState > initialState) 1 else -1
+                              (slideInHorizontally(tween(260)) { it / 6 * dir } + fadeIn(tween(260))) togetherWith
+                                  (slideOutHorizontally(tween(200)) { -it / 6 * dir } + fadeOut(tween(160)))
+                          }, label = "tabs") { shownTab ->
+                            when (shownTab) {
                                 0 -> ListScreen(
                                     onOpenDeals = { tab = 1 },
                                     onDinner = { tab = 2 },
@@ -106,6 +119,7 @@ class MainActivity : ComponentActivity() {
                                 2 -> DinnerScreen()
                                 else -> SettingsScreen()
                             }
+                          }
                         }
                     }
                     if (ChatUi.open) DinnerChat(onClose = { ChatUi.open = false })

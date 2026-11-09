@@ -2,6 +2,9 @@ package com.handleliste.app.ui
 
 import android.app.Activity
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -158,9 +161,31 @@ fun DinnerScreen() {
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text(tr("What's for dinner?", "Hva blir det til middag?"), style = MaterialTheme.typography.headlineMedium)
-        Text(tr("ChatGPT suggests dinners from your shopping list, right here in the app", "ChatGPT foreslår middager ut fra handlelisten din, rett her i appen"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Warm gradient header with a gently steaming plate.
+        val steam = rememberInfiniteTransition(label = "steam")
+        val rise by steam.animateFloat(0f, 1f, infiniteRepeatable(tween(2200, easing = LinearEasing)), label = "rise")
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFFE8833A), Color(0xFFB3361F))))) {
+            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("What's for dinner?", "Hva blir det til middag?"), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, lineHeight = 30.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(tr("ChatGPT suggests dinners from your shopping list, right here in the app", "ChatGPT foreslår middager ut fra handlelisten din, rett her i appen"),
+                        color = Color.White.copy(alpha = 0.88f), fontSize = 14.sp)
+                }
+                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                        for (k in 0..2) {
+                            val p = (rise + k / 3f) % 1f
+                            val x = size.width * (0.32f + k * 0.18f)
+                            drawCircle(Color.White.copy(alpha = 0.35f * (1f - p)), radius = 4.dp.toPx() + p * 4.dp.toPx(),
+                                center = androidx.compose.ui.geometry.Offset(x, size.height * (0.42f - p * 0.38f)))
+                        }
+                    }
+                    Text("🍲", fontSize = 40.sp, modifier = Modifier.offset(y = 10.dp))
+                }
+            }
+        }
         Spacer(Modifier.height(14.dp))
         Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
