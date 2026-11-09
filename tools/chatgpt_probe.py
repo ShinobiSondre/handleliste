@@ -1,34 +1,27 @@
-"""Replays the app's follow-up flow in one browser (headless Chromium = Android WebView engine)."""
-import json, time, urllib.parse
+"""Does ChatGPT end with the app's RETT lines? (headless Chromium = Android WebView engine)"""
+import json, re, time, urllib.parse
 from playwright.sync_api import sync_playwright
-def note(t, m): print(f"::notice title={t}::{str(m).replace(chr(10),' ')[:900]}")
-STATE = """(()=>{const a=[...document.querySelectorAll('[data-message-role="assistant"],[data-message-author-role="assistant"]')].map(e=>e.innerText);
-const c=document.querySelector('#prompt-textarea')||document.querySelector('textarea');
-const d=[...document.querySelectorAll('[role="dialog"],dialog[open]')].map(e=>(e.innerText||'').slice(0,120)).join(' | ');
-return {a:a, users:document.querySelectorAll('[data-message-role="user"],[data-message-author-role="user"]').length, pending:c?(c.innerText||c.value||'').trim().length:-1,
-busy:!!document.querySelector('[data-message-streaming],[data-testid="stop-button"]'), path:location.pathname, title:document.title, dialog:d, body:(document.body?document.body.innerText:'').slice(0,300)}})()"""
-def ask(page, q, label):
-    page.goto("https://chatgpt.com/?" + urllib.parse.urlencode({"q": q}), wait_until="domcontentloaded", timeout=60000)
-    t0 = time.time(); st = None; last = ""; stable = time.time()
-    while time.time() - t0 < 60:
-        time.sleep(1)
-        try: st = page.evaluate(STATE)
-        except Exception: continue
-        txt = st["a"][0] if st["a"] else ""
-        if txt != last: last = txt; stable = time.time()
-        if txt and not st["busy"] and time.time() - stable > 2.5:
-            note(f"{label} ANSWERED in {time.time()-t0:.0f}s", txt[:300]); return txt
-    note(f"{label} NO ANSWER", st); return ""
-first = "Hva kan jeg lage til middag? Foreslå 3 middager. Handlelisten min: Pasta, Pesto, Kylling, Ost, Mais. Svar kort på norsk.\nAvslutt med én linje som starter med «HANDLE:»."
+def note(t, m): print(f"::notice title={t}::{str(m).replace(chr(10),' ⏎ ')[:1600]}")
+prompt = ("Hva kan jeg lage til middag? Foreslå 3 middager, mest mulig laget av det jeg skal handle.\n"
+  "Handlelisten min: Pasta, Pesto, Kylling, Ost, Mais, Lomper\n"
+  "Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Svar på norsk, kort og oversiktlig: navn på retten, tid, hvorfor den passer, og en enkel oppskrift med ingredienser og fremgangsmåte for hver.\n"
+  "Gi hver rett en kort overskrift med navnet. Avslutt svaret med én linje per rett, nøyaktig slik: «RETT: <navn> | HANDLE: <det jeg må kjøpe, korte varenavn slik de heter i norske butikker, adskilt med komma> | BRUKER: <varer fra handlelisten min som retten bruker>». Skriv «ingenting» der det er tomt.")
+STATE = """(()=>{const a=[...document.querySelectorAll('[data-message-role="assistant"]')].map(e=>e.innerText);
+return {a:a, busy:!!document.querySelector('[data-message-streaming]'), done:!!document.querySelector('[data-message-role="assistant"][data-message-complete]')}})()"""
 with sync_playwright() as p:
     br = p.chromium.launch()
-    for mode in ("wipe cookies", "keep cookies"):
+    for run in (1, 2):
         ctx = br.new_context(**p.devices["Pixel 7"], locale="nb-NO"); page = ctx.new_page()
-        a1 = ask(page, first, f"[{mode}] first")
-        for k, follow in enumerate(("Gjør det vegetar", "Noe raskere")):
-            fq = first + "\n\nFortsett samtalen under og svar på norsk.\n\nDitt svar: " + a1[:1500] + "\n\nNytt spørsmål: " + follow
-            page.goto("about:blank")
-            if mode == "wipe cookies": ctx.clear_cookies()
-            a1 = ask(page, fq, f"[{mode}] follow-up {k+1}") or a1
+        t0 = time.time()
+        page.goto("https://chatgpt.com/?" + urllib.parse.urlencode({"q": prompt}), wait_until="domcontentloaded", timeout=60000)
+        st = None
+        while time.time() - t0 < 60:
+            time.sleep(0.3)
+            try: st = page.evaluate(STATE)
+            except Exception: continue
+            if st["a"] and st["done"] and not st["busy"]: break
+        txt = "\n".join(st["a"]) if st else ""
+        lines = [l for l in txt.splitlines() if re.match(r"^\W*(RETT|DISH)\s*\d*[*\s]*[:.]", l, re.I) and "|" in l]
+        note(f"run{run}: done={st and st['done']} in {time.time()-t0:.1f}s, {len(lines)} RETT lines", lines)
         ctx.close()
     br.close()
