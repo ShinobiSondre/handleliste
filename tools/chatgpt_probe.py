@@ -7,7 +7,8 @@ src = open("app/src/main/java/com/handleliste/app/data/ChatGptBridge.kt", encodi
 def kt_const(name):
     # Rebuild a Kotlin "a" + "b" string constant into JavaScript.
     start = src.index(f"private const val {name} =")
-    body = src[start:src.index("\n\n", start)]
+    end = min(src.index("\n\n", start), src.find("private const val", start + 10) if src.find("private const val", start + 10) > 0 else len(src))
+    body = src[start:end]
     body = "\n".join(l for l in body.split("\n") if not l.strip().startswith("//"))
     out, i = [], body.index("=") + 1
     while True:
