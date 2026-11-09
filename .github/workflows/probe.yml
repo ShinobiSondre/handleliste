@@ -1,0 +1,29 @@
+name: Probe APIs
+on:
+  push:
+    paths: [".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: recipes
+        run: |
+          set +e
+          UA="Mozilla/5.0 (Linux; Android 14) Handleliste/1.0"
+          for q in "kremet%20pesto-pasta%20med%20kylling" "taco" "kyllinggrateng"; do
+            r=$(curl -sS -m 20 -A "$UA" "https://oda.com/api/v1/search/mixed/?q=$q&type=recipe")
+            echo "::notice title=oda recipe $q::$(echo "$r" | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)
+          items=d.get("items") or []
+          out=[]
+          for it in items:
+              a=it.get("attributes") or {}
+              t=it.get("type")
+              if t=="recipe" or "recipe" in json.dumps(it)[:200]:
+                  out.append((t, a.get("title") or a.get("name"), json.dumps(a.get("feature_image_url") or a.get("images") or a.get("image") or "")[:160]))
+          print(len(items), [it.get("type") for it in items][:8], out[:4])
+          ' 2>&1 | head -c 1500)"
+          done
+          r=$(curl -sS -m 20 -A "$UA" "https://oda.com/api/v1/search/mixed/?q=taco&type=recipe")
+          echo "::notice title=raw::$(echo "$r" | python3 -c 'import json,sys;d=json.load(sys.stdin);it=d["items"];print([i.get("type") for i in it][:10]); print(json.dumps([i for i in it if i.get("type")!="product"][:1])[:1200])' 2>&1 | head -c 1500)"
