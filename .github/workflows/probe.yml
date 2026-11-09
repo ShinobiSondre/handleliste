@@ -1,0 +1,20 @@
+name: Probe APIs
+on:
+  push:
+    paths: [".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: catalogs
+        run: |
+          set +e
+          UA="Mozilla/5.0 (Linux; Android 14) Handleliste/1.0"
+          for c in 1300 1100 1210 1220; do
+            r=$(curl -sS -m 20 -A "$UA" "https://platform-rest-prod.ngdata.no/api/episearch/$c/products?search=jacobs%20pesto&page_size=5" -w " HTTP%{http_code}")
+            echo "::notice title=ngdata episearch $c::$(echo "$r" | head -c 700 | tr '\n' ' ') ${r##* }"
+          done
+          r=$(curl -sS -m 20 -A "$UA" "https://platform-rest-prod.ngdata.no/api/products/1300/7080000000000?search=jacobs%20pesto&page_size=5&full_response=true" -w " HTTP%{http_code}")
+          echo "::notice title=ngdata products::$(echo "$r" | head -c 700 | tr '\n' ' ') ${r##* }"
+          r=$(curl -sS -m 20 -A "$UA" "https://oda.com/api/v1/search/?q=jacobs%20pesto" -w " HTTP%{http_code}")
+          echo "::notice title=oda jacobs::$(echo "$r" | python3 -c 'import json,sys;d=json.loads(sys.stdin.read().rsplit(" HTTP",1)[0]);print([p["full_name"] for p in d["products"]][:8])' 2>&1 | head -c 500)"
