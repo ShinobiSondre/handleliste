@@ -1,40 +1,28 @@
-"""Runs the app's own READ script against real ChatGPT in headless Chromium (Android WebView's engine)."""
+"""How long can a ChatGPT ?q= question be and still be sent? (headless Chromium = Android WebView engine)"""
 import json, time, urllib.parse
 from playwright.sync_api import sync_playwright
-src = open("app/src/main/java/com/handleliste/app/data/ChatGptBridge.kt", encoding="utf-8").read()
-def kt_const(name):
-    start = src.index(f"private const val {name} =")
-    nxt = src.find("private const val", start + 10)
-    body = src[start:min(src.index("\n\n", start), nxt if nxt > 0 else len(src))]
-    body = "\n".join(l for l in body.split("\n") if not l.strip().startswith("//"))
-    out, i = [], body.index("=") + 1
-    while True:
-        q = body.find('"', i)
-        if q < 0: break
-        j = q + 1; buf = ""
-        while body[j] != '"':
-            if body[j] == "\\": buf += body[j:j+2]; j += 2
-            else: buf += body[j]; j += 1
-        out.append(json.loads('"' + buf + '"')); i = j + 1
-    return "".join(out)
-READ = kt_const("READ")
-prompt = "Hva kan jeg lage til middag? Foreslå 3 middager. Handlelisten min: Pasta, Pesto, Kylling, Ost, Mais. Svar kort på norsk.\nAvslutt med én linje som starter med «HANDLE:»."
-url = "https://chatgpt.com/?" + urllib.parse.urlencode({"q": prompt})
-def note(t, m): print(f"::notice title={t}::{str(m).replace(chr(10),' ')[:1500]}")
+def note(t, m): print(f"::notice title={t}::{str(m).replace(chr(10),' ')[:600]}")
+STATE = """(()=>{const a=[...document.querySelectorAll('[data-message-role="assistant"],[data-message-author-role="assistant"]')].map(e=>e.innerText);
+const c=document.querySelector('#prompt-textarea')||document.querySelector('textarea');
+return {a:a, users:document.querySelectorAll('[data-message-role="user"],[data-message-author-role="user"]').length, pending:c?(c.innerText||c.value||'').trim().length:-1,
+busy:!!document.querySelector('[data-message-streaming],[data-testid="stop-button"]'), url:location.pathname}})()"""
+filler = "- kyllingfilet (Solvinge, 700 g): 109.00 kr hos REMA 1000\n"
 with sync_playwright() as p:
     br = p.chromium.launch()
-    for run in (1, 2):
-        ctx = br.new_context(**p.devices["Pixel 7"], locale="nb-NO")
-        page = ctx.new_page(); page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        t0 = time.time(); last = ""; stable = time.time(); done = False
-        while time.time() - t0 < 75:
-            time.sleep(0.6)
-            try: o = json.loads(page.evaluate(READ))
-            except Exception as e: continue
-            text = o["a"][0].strip() if o["a"] else ""
-            if text != last: last = text; stable = time.time()
-            if text and not o["busy"] and len(text) >= 20 and time.time() - stable > 2.5:
-                note(f"run{run} APP WOULD SHOW ANSWER after {time.time()-t0:.0f}s (users={o['users']}, pending={o['pending']})", text[:700]); done = True; break
-        if not done: note(f"run{run} NO ANSWER", {k: o.get(k) for k in ("users","pending","busy","url","dialog")})
+    for n in (1500, 3000, 4500, 6000, 8000):
+        q = "Svar med ett ord: hva er hovedstaden i Norge?\nBakgrunn:\n" + (filler * (n // len(filler)))
+        q = q[:n]
+        url = "https://chatgpt.com/?" + urllib.parse.urlencode({"q": q})
+        ctx = br.new_context(**p.devices["Pixel 7"], locale="nb-NO"); page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            st = None
+            for _ in range(30):
+                time.sleep(1)
+                try: st = page.evaluate(STATE)
+                except Exception: continue
+                if st["a"] and not st["busy"]: break
+            note(f"q={len(q)} chars, url={len(url)}", {"answered": bool(st and st['a']), "users": st and st["users"], "pending": st and st["pending"], "path": st and st["url"], "a": st and (st["a"][0][:80] if st["a"] else "")})
+        except Exception as e: note(f"q={n} error", e)
         ctx.close()
     br.close()
