@@ -145,10 +145,10 @@ fun DinnerScreen() {
     fun ask() {
         val list = ChatUi.items().map { it.name }
         val onSale = if (useDeals) Deals.results.filter { it.offers.isNotEmpty() }.map { it.item } else emptyList()
-        val prompt = Dinner.prompt(list, extra, onSale, wishes.joinToString(", "), DinnerPrefs.recent(ctx))
+        val prompt = Dinner.prompt(list, extra, onSale, "", DinnerPrefs.recent(ctx))
         val shown = tr("What can I make for dinner?", "Hva kan jeg lage til middag?") +
             (if (list.isNotEmpty()) "\n" + list.joinToString(", ") else "") +
-            (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "")
+            ""
         ChatGptBridge.reset()
         ChatUi.pickedDish.clear()
         ChatUi.budget = null
@@ -171,6 +171,7 @@ fun DinnerScreen() {
         val prompt = Dinner.budgetPrompt(budget.toInt(), servings, ChatUi.items().map { it.name }, extra, deals, wishes.joinToString(", "), DinnerPrefs.recent(ctx))
         val shown = tr("Make me dinner for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "people"}",
             "Lag middag for ${budget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
+            (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "") +
             (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
         ChatGptBridge.reset()
         ChatUi.pickedDish.clear()
@@ -237,15 +238,6 @@ fun DinnerScreen() {
             shape = RoundedCornerShape(14.dp)
         )
         Spacer(Modifier.height(10.dp))
-        Text(tr("What do you feel like? (remembered)", "Hva har du lyst på? (huskes)"), fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 4.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DinnerPrefs.CHOICES.forEach { c ->
-                val on = c.id in DinnerPrefs.chosen
-                FilterChip(selected = on, onClick = { DinnerPrefs.toggle(ctx, c.id) }, label = { Text(tr(c.en, c.no)) },
-                    leadingIcon = if (on) ({ Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }) else null)
-            }
-        }
         if (Deals.results.any { it.offers.isNotEmpty() }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(tr("Prefer what's on sale", "Bruk gjerne det som er på tilbud"), Modifier.weight(1f))
@@ -280,6 +272,18 @@ fun DinnerScreen() {
                     IconButton(onClick = { if (servings < 8) servings++ }) { Text("+", fontSize = 22.sp, color = MaterialTheme.colorScheme.onTertiaryContainer) }
                 }
                 Slider(value = budget, onValueChange = { budget = (Math.round(it / 10f) * 10f) }, valueRange = 50f..500f)
+                Spacer(Modifier.height(6.dp))
+                Text(tr("What should it be? (remembered)", "Hva skal det være? (huskes)"), fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.padding(bottom = 4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DinnerPrefs.CHOICES.forEach { c ->
+                        val on = c.id in DinnerPrefs.chosen
+                        FilterChip(selected = on, onClick = { DinnerPrefs.toggle(ctx, c.id) }, label = { Text(tr(c.en, c.no)) },
+                            leadingIcon = if (on) ({ Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }) else null)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
                 Text(tr("About ${(budget / servings).toInt()} kr per person", "Ca. ${(budget / servings).toInt()} kr per person"),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
                 Spacer(Modifier.height(10.dp))
