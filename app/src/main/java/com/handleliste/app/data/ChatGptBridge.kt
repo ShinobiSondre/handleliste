@@ -172,21 +172,33 @@ object ChatGptBridge {
         status.value = Status.THINKING
         pageUrl.value = url
         freshLoad(w, url)
-        watch()
     }
 
     /**
      * Every question is a brand-new, logged-out ChatGPT: cookies and site storage are wiped first,
      * so ChatGPT never counts earlier chats and asks us to log in.
      */
-    private fun freshLoad(w: WebView, url: String) {
-        w.loadUrl("about:blank") // so the previous answer can't be read while the new page loads
+    private fun freshLoad(@Suppress("UNUSED_PARAMETER") w: WebView, url: String) {
+        // A brand-new browser for every question: the old page is closed first, and only then are
+        // ChatGPT's cookies and storage wiped. Wiping while the old page still ran left the next
+        // page hanging, which is why follow-up questions never got an answer.
+        poll?.cancel()
+        val a = host?.get()
+        web?.let { old ->
+            old.stopLoading()
+            (old.parent as? ViewGroup)?.let { h -> (h.parent as? ViewGroup)?.removeView(h); h.removeView(old) }
+            old.destroy()
+        }
+        web = null
         val cm = CookieManager.getInstance()
         cm.removeAllCookies {
             cm.flush()
             android.webkit.WebStorage.getInstance().deleteAllData()
-            w.clearCache(false)
-            w.loadUrl(url)
+            val fresh = a?.let { webView(it) }
+            if (fresh == null) { fail(com.handleliste.app.util.tr("ChatGPT couldn't start. Try again.", "ChatGPT kunne ikke starte. Prøv igjen.")); return@removeAllCookies }
+            fresh.clearCache(true)
+            fresh.loadUrl(url)
+            watch() // start reading only once the new page is on its way
         }
     }
 
@@ -219,7 +231,6 @@ object ChatGptBridge {
         pageUrl.value = url
         log("ask", "follow-up sent as a new link (${q.length} chars)")
         freshLoad(w, url)
-        watch()
     }
 
     /** The original question + the conversation so far + the new question, kept short enough for a link. */
