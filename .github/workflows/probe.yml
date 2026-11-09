@@ -7,17 +7,8 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: catalogs
+      - name: oda
         run: |
-          set +e
-          UA="Handleliste/1.0 (Android; github.com/ShinobiSondre/handleliste)"
-          r=$(curl -sS -m 20 -A "$UA" "https://oda.com/api/v1/search/mixed/?q=pesto&type=product" -w " HTTP%{http_code}")
-          echo "::notice title=oda mixed::$(echo "$r" | head -c 1500 | tr '\n' ' ')"
-          r=$(curl -sS -m 20 -A "$UA" "https://oda.com/api/v1/search/?q=pesto" -w " HTTP%{http_code}")
-          echo "::notice title=oda search::$(echo "$r" | head -c 300 | tr '\n' ' ') ${r##* }"
-          r=$(curl -sS -m 20 -A "$UA" "https://kassal.app/api/v1/products?search=pesto&size=2" -w " HTTP%{http_code}")
-          echo "::notice title=kassal no key::$(echo "$r" | head -c 300 | tr '\n' ' ')"
-          r=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/catalogs?r_lat=59.744&r_lng=10.204&r_radius=30000&r_locale=nb_NO&api_av=0.3.0&limit=100&types=paged,incito")
-          id=$(echo "$r" | python3 -c 'import json,sys;print(next(x["id"] for x in json.load(sys.stdin) if (x.get("branding") or {}).get("name")=="REMA 1000"))')
-          o=$(curl -sS -m 20 "https://squid-api.tjek.com/v2/offers?catalog_ids=$id&limit=100&api_av=0.3.0")
-          echo "::notice title=REMA flyer chicken/pesto::$(echo "$o" | python3 -c 'import json,sys;d=json.load(sys.stdin);print([(x["heading"],(x.get("description") or "")[:60]) for x in d if any(w in (x["heading"]+(x.get("description") or "")).lower() for w in ("kylling","pesto","kjøttdeig"))])' 2>&1 | head -c 1500)"
+          r=$(curl -sS -m 20 -A "Handleliste/1.0 (Android; github.com/ShinobiSondre/handleliste)" "https://oda.com/api/v1/search/?q=kyllingfilet")
+          echo "::notice title=oda keys::$(echo "$r" | python3 -c 'import json,sys;d=json.load(sys.stdin);p=d["products"];print(len(p),"top:",list(d.keys()),"prod keys:",sorted(p[0].keys()),"images:",json.dumps(p[0].get("images"))[:500])' 2>&1 | head -c 1800)"
+          echo "::notice title=oda names::$(echo "$r" | python3 -c 'import json,sys;d=json.load(sys.stdin);print([(x["full_name"],x.get("name_extra"),x.get("gross_price"),(x.get("discount") or {}) and "disc") for x in d["products"]][:20])' 2>&1 | head -c 1800)"
