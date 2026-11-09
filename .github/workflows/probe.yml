@@ -1,0 +1,18 @@
+name: Probe APIs
+on:
+  push:
+    paths: [".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: meny search
+        run: |
+          set +e
+          UA="Handleliste/1.0 (Android; github.com/ShinobiSondre/handleliste)"
+          for c in 1300 1210 1220; do
+            for q in "first%20price%20egg" "egg%20first%20price" "egg" "firstprice%20egg"; do
+              r=$(curl -sS -m 20 -A "$UA" "https://platform-rest-prod.ngdata.no/api/episearch/$c/products?search=$q&page_size=30")
+              echo "::notice title=$c $q::$(echo "$r" | python3 -c 'import json,sys;d=json.load(sys.stdin);h=d.get("hits",[]);print(d.get("total"),[(x["title"],x["description"]) for x in h if "first" in (x["title"]+x["description"]).lower()][:6],"| first 6:",[(x["title"],x["description"][:30]) for x in h[:6]])' 2>&1 | head -c 900)"
+            done
+          done
