@@ -110,6 +110,7 @@ import com.handleliste.app.data.PriceLine
 import com.handleliste.app.data.Prices
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -563,7 +564,21 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
                     Text(tr("✓ You have everything for ${d.name}", "✓ Du har alt du trenger til ${d.name}"),
                         Modifier.fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
                 }
-                MakeListButton(d, Dinner.recipeFor(answer, d, dishes))
+                // The recipe comes as a quick second question (the first answer is kept short so it's fast).
+                val turnsNow by ChatGptBridge.turns.collectAsState()
+                val status by ChatGptBridge.status.collectAsState()
+                val label = Dinner.recipeLabel(d)
+                val qi = turnsNow.indexOfLast { it.user && it.text == label }
+                val recipe = turnsNow.getOrNull(qi + 1)?.takeIf { qi >= 0 && !it.user && (qi + 1 < turnsNow.lastIndex || status == ChatGptBridge.Status.DONE) }?.text
+                if (recipe == null) {
+                    FilledTonalButton(onClick = { ChatGptBridge.followUp(label, Dinner.recipeQuestion(d)) },
+                        enabled = status != ChatGptBridge.Status.THINKING, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                        Text(if (qi >= 0) tr("Getting the recipe…", "Henter oppskriften …") else tr("Get the recipe for ${d.name}", "Hent oppskriften på ${d.name}"),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                MakeListButton(d, recipe?.let { Dinner.display(it) } ?: Dinner.recipeFor(answer, d, dishes))
             }
         }
     }

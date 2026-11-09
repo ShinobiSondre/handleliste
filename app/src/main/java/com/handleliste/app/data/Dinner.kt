@@ -19,8 +19,8 @@ object Dinner {
             if (onSale.isNotEmpty()) b.append("På tilbud nær meg denne uken (bruk gjerne): ${onSale.joinToString(", ")}\n")
             if (wishes.isNotBlank()) b.append("Dette er viktig for meg, følg det: $wishes\n")
             if (avoid.isNotEmpty()) b.append("Jeg har nylig fått disse forslagene, så foreslå noe annet enn dem (og varier gjerne kjøkken, f.eks. norsk, italiensk, asiatisk, indisk, meksikansk): ${avoid.joinToString("; ")}\n")
-            b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Svar på norsk, kort og oversiktlig: " +
-                "navn på retten, tid, hvorfor den passer, og en enkel oppskrift med ingredienser og fremgangsmåte for hver.\n")
+            b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Svar på norsk og KORT: for hver rett bare navnet som overskrift, " +
+                "tid, og én setning om hvorfor den passer. Ikke skriv oppskriften ennå, den ber jeg om etterpå.\n")
             b.append("Gi hver rett en kort overskrift med navnet. Avslutt svaret med én linje per rett, nøyaktig slik: " +
                 "«RETT: <navn> | HANDLE: <det jeg må kjøpe, korte varenavn slik de heter i norske butikker, adskilt med komma> | " +
                 "BRUKER: <varer fra handlelisten min som retten bruker> | ALT: <alle ingrediensene retten trenger, unntatt salt, pepper, olje og krydder> | BILDE: <2–4 engelske ord som beskriver retten, til bildesøk>». Skriv «ingenting» der det er tomt.")
@@ -31,8 +31,8 @@ object Dinner {
             if (onSale.isNotEmpty()) b.append("On sale near me this week (use if it fits): ${onSale.joinToString(", ")}\n")
             if (wishes.isNotBlank()) b.append("This matters to me, follow it: $wishes\n")
             if (avoid.isNotEmpty()) b.append("I was recently suggested these, so suggest something different (and vary the cuisine, e.g. Nordic, Italian, Asian, Indian, Mexican): ${avoid.joinToString("; ")}\n")
-            b.append("Assume I have salt, pepper, oil, butter and common spices. Keep it short and clear: " +
-                "dish name, time, why it fits, and a simple recipe with ingredients and steps for each.\n")
+            b.append("Assume I have salt, pepper, oil, butter and common spices. Keep it SHORT: for each dish just its name as a heading, " +
+                "the time, and one sentence on why it fits. Don't write the recipe yet; I'll ask for it afterwards.\n")
             b.append("Give each dish a short heading with its name. End the answer with one line per dish, exactly like this: " +
                 "\"DISH: <name> | BUY: <what I must buy, short grocery names, comma-separated> | USES: <items from my shopping list the dish uses> | ALL: <every ingredient the dish needs, except salt, pepper, oil and spices> | IMAGE: <2-4 English words describing the dish, for an image search>\". " +
                 "Write \"nothing\" where empty.")
@@ -55,7 +55,7 @@ object Dinner {
             if (wishes.isNotBlank()) b.append("Dette er viktig for meg, følg det: $wishes\n")
             if (avoid.isNotEmpty()) b.append("Jeg har nylig fått disse forslagene, så foreslå noe annet enn dem (og varier gjerne kjøkken, f.eks. norsk, italiensk, asiatisk, indisk, meksikansk): ${avoid.joinToString("; ")}\n")
             b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Tell med hele pakninger slik de selges i butikken. " +
-                "Foreslå 1 middag (og gjerne 1 billigere reserve). Vis en kort handleliste med pris per vare og butikk, totalsum, og en enkel oppskrift. " +
+                "Foreslå 1 middag (og gjerne 1 billigere reserve). Svar KORT: navnet som overskrift, tid, én setning om hvorfor, og omtrentlig totalsum. Ikke skriv oppskriften ennå. " +
                 "Bruk norske priser for 2025–2026 der tilbudene ikke dekker det. Hold deg under $budget kr. Svar på norsk.\n")
             b.append("Totalen skal være alt middagen koster: varene fra handlelisten som brukes + det jeg må kjøpe i tillegg.\n")
             b.append("Avslutt svaret med én linje per rett (hovedforslaget og reserven), nøyaktig slik: " +
@@ -73,7 +73,7 @@ object Dinner {
             if (wishes.isNotBlank()) b.append("This matters to me, follow it: $wishes\n")
             if (avoid.isNotEmpty()) b.append("I was recently suggested these, so suggest something different (and vary the cuisine, e.g. Nordic, Italian, Asian, Indian, Mexican): ${avoid.joinToString("; ")}\n")
             b.append("Assume I have salt, pepper, oil, butter and common spices. Count whole packs as sold in Norwegian stores. " +
-                "Suggest 1 dinner (and maybe 1 cheaper backup). Show a short shopping list with price per item and store, the total, and a simple recipe. " +
+                "Suggest 1 dinner (and maybe 1 cheaper backup). Answer SHORT: the name as a heading, time, one sentence on why, and the rough total. Don't write the recipe yet. " +
                 "Use Norwegian 2025–2026 prices where the deals don't cover it. Stay under $budget NOK.\n")
             b.append("The total is everything the dinner costs: the shopping-list items it uses + what I must buy extra.\n")
             b.append("End the answer with one line per dish (the main one and the backup), exactly like this: " +
@@ -82,6 +82,15 @@ object Dinner {
         }
         return b.toString()
     }
+
+    /** Asked when you pick a dish: just its recipe, short. */
+    fun recipeQuestion(d: Dish): String = if (Lang.no)
+        "Gi meg oppskriften på «${d.name}»: ingredienser med mengder, og fremgangsmåte i korte, nummererte steg. " +
+            "Denne gangen svarer du BARE med oppskriften, uten RETT-linjer til slutt."
+    else "Give me the recipe for \"${d.name}\": ingredients with amounts, and the method in short numbered steps. " +
+        "This time answer ONLY with the recipe, without DISH lines at the end."
+
+    fun recipeLabel(d: Dish): String = (if (Lang.no) "Oppskrift: " else "Recipe: ") + d.name
 
     /** Groceries ChatGPT says you still need (from its last "HANDLE:" line). */
     fun missing(answer: String): List<String> {
