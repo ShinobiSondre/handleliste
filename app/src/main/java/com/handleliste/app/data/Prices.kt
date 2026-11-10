@@ -45,7 +45,8 @@ object Prices {
 
     /** What each grocery costs now: cheapest deal near you, else the normal store price (MENY or Oda). */
     suspend fun check(ctx: Context, items: List<String>, pins: Map<String, Pin> = emptyMap()): List<PriceLine> = withContext(Dispatchers.Default) {
-        val flyers = Flyers.cached(ctx)
+        // Only deals from the store you chose on the list screen (if you chose one).
+        val flyers = Flyers.cached(ctx).let { all -> Deals.store?.let { st -> all.filter { Parse.sameChain(it.store, st) } } ?: all }
         coroutineScope {
             items.map { item ->
                 async {

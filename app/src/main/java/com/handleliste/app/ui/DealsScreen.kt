@@ -135,7 +135,8 @@ fun DealsScreen() {
     }
     val stores = results.flatMap { d -> d.offers.map { it.store }.distinct() }.groupingBy { it }.eachCount()
         .toList().sortedByDescending { it.second }
-    var tab by rememberSaveable { mutableStateOf("") }
+    // Opens on the store you chose on the list screen (if it has deals on your list).
+    var tab by rememberSaveable { mutableStateOf(Deals.store.orEmpty()) }
     if (tab.isNotEmpty() && stores.none { it.first == tab }) tab = ""
 
     Column(Modifier.fillMaxSize()) {

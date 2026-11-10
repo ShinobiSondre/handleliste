@@ -182,12 +182,7 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
             )
             Spacer(Modifier.height(10.dp))
             DealsSummary(onOpenDeals)
-            Spacer(Modifier.height(8.dp))
-            FilledTonalButton(onClick = onDinner, modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)) {
-                Icon(Icons.Filled.Restaurant, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                Text(tr("What can I make for dinner?", "Hva kan jeg lage til middag?"), maxLines = 1)
-            }
+            StorePicker()
             ListRepo.current?.let { l ->
                 Spacer(Modifier.height(10.dp))
                 RecipeCard(l)
@@ -331,11 +326,37 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
     )
 }
 
+/** Which store's prices to show: all (default) or one chain. Remembered. */
+@Composable
+private fun StorePicker() {
+    val ctx = LocalContext.current
+    val chains = Deals.chains.ifEmpty { Deals.bestStores().map { it.first } }
+    if (chains.isEmpty()) return
+    Spacer(Modifier.height(8.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            Text(tr("Prices from", "Priser fra"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, end = 2.dp))
+        }
+        item { StoreChip(tr("All stores", "Alle butikker"), Deals.store == null) { Deals.chooseStore(ctx, null) } }
+        items(chains, key = { it }) { c -> StoreChip(c, Deals.store == c) { Deals.chooseStore(ctx, c) } }
+    }
+}
+
+@Composable
+private fun StoreChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val bg by animateColorAsState(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "store")
+    Surface(onClick = onClick, shape = RoundedCornerShape(50), color = bg,
+        contentColor = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, tonalElevation = 1.dp) {
+        Text(label, Modifier.padding(horizontal = 12.dp, vertical = 7.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
 /** Deals are checked by themselves; this shows the result and opens the Deals tab. */
 @Composable
 private fun DealsSummary(onOpen: () -> Unit) {
-    val onSale = Deals.results.filter { it.offers.isNotEmpty() }
-    val best = Deals.bestStores().firstOrNull()
+    val onSale = Deals.results.filter { Deals.offersFor(it).isNotEmpty() }
+    val best = if (Deals.store != null) null else Deals.bestStores().firstOrNull()
     Surface(onClick = onOpen, shape = RoundedCornerShape(14.dp),
         color = if (onSale.isNotEmpty()) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()) {
@@ -350,7 +371,8 @@ private fun DealsSummary(onOpen: () -> Unit) {
                         ListRepo.open.isEmpty() -> tr("Deals are checked as you add things", "Tilbud sjekkes når du legger til varer")
                         onSale.isEmpty() && Deals.fetchedAt > 0 -> tr("No deals on your list this week", "Ingen tilbud på listen din denne uken")
                         onSale.isEmpty() -> tr("Deals", "Tilbud")
-                        else -> tr("${onSale.size} of your items are on sale", "${onSale.size} av varene dine er på tilbud")
+                        else -> tr("${onSale.size} of your items are on sale", "${onSale.size} av varene dine er på tilbud") +
+                            (Deals.store?.let { tr(" at $it", " hos $it") } ?: "")
                     },
                     fontWeight = FontWeight.SemiBold
                 )
@@ -403,15 +425,15 @@ private fun Hero(open: Int, done: Int, listName: String, image: String?, onSetti
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
     val greet = when (hour) {
         in 5..9 -> tr("Good morning", "God morgen")
-        in 10..16 -> tr("Hi there", "Hei")
+        in 10..16 -> tr("Hi", "Hei")
         in 17..21 -> tr("Good evening", "God kveld")
-        else -> tr("Late-night shopping?", "Sen handletur?")
+        else -> tr("Late shop", "Sen handletur")
     }
     val total = open + done
     val progress by animateFloatAsState(if (total == 0) 0f else done.toFloat() / total, tween(700, easing = FastOutSlowInEasing), label = "progress")
     val dark = isSystemInDarkTheme()
     Box(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
             .background(Brush.linearGradient(if (dark) listOf(Color(0xFF1E5A3B), Color(0xFF0F3322)) else listOf(Color(0xFF2E9E66), Color(0xFF145C39))))
     ) {
         // A list made from a dish shows the dish's photo behind a dark-green veil.
@@ -424,37 +446,34 @@ private fun Hero(open: Int, done: Int, listName: String, image: String?, onSetti
             drawCircle(Color.White.copy(alpha = 0.07f), radius = size.height * 0.9f, center = Offset(size.width * 0.95f, -size.height * 0.1f))
             drawCircle(Color.White.copy(alpha = 0.05f), radius = size.height * 0.55f, center = Offset(size.width * 0.12f, size.height * 1.15f))
         }
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(greet, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text(listName.ifBlank { tr("Shopping list", "Handleliste") }, color = Color.White, fontSize = 28.sp,
+                Text(listName.ifBlank { tr("Shopping list", "Handleliste") }, color = Color.White, fontSize = 22.sp,
                     fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
                 AnimatedContent(open, transitionSpec = { (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut()) }, label = "count") { n ->
                     Text(
-                        when (n) {
-                            0 -> if (total > 0) tr("All done 🎉", "Alt er handlet 🎉") else tr("Nothing to buy yet", "Ingenting å kjøpe ennå")
+                        "$greet · " + when (n) {
+                            0 -> if (total > 0) tr("all done 🎉", "alt er handlet 🎉") else tr("nothing to buy yet", "ingenting å kjøpe ennå")
                             1 -> tr("1 thing to buy", "1 ting å kjøpe")
                             else -> tr("$n things to buy", "$n ting å kjøpe")
                         },
-                        color = Sun, fontSize = 15.sp, fontWeight = FontWeight.Bold
+                        color = Sun, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(Modifier.height(10.dp))
-                WatchPill(onClick = onSettings, onDark = true)
             }
-            Spacer(Modifier.width(12.dp))
-            Box(Modifier.size(78.dp), contentAlignment = Alignment.Center) {
+            Spacer(Modifier.width(8.dp))
+            WatchPill(onClick = onSettings, onDark = true, compact = true)
+            Spacer(Modifier.width(10.dp))
+            Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize()) {
-                    val w = 8.dp.toPx()
+                    val w = 6.dp.toPx()
                     drawArc(Color.White.copy(alpha = 0.18f), 0f, 360f, false, style = Stroke(w, cap = StrokeCap.Round),
                         topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w))
                     drawArc(Sun, -90f, 360f * progress, false, style = Stroke(w, cap = StrokeCap.Round),
                         topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("$done/$total", color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
-                    Text(tr("in cart", "i kurven"), color = Color.White.copy(alpha = 0.75f), fontSize = 10.sp)
+                    Text("$done/$total", color = Color.White, fontWeight = FontWeight.Black, fontSize = 13.sp)
                 }
             }
         }
@@ -462,7 +481,7 @@ private fun Hero(open: Int, done: Int, listName: String, image: String?, onSetti
 }
 
 @Composable
-private fun WatchPill(onClick: () -> Unit, onDark: Boolean = false) {
+private fun WatchPill(onClick: () -> Unit, onDark: Boolean = false, compact: Boolean = false) {
     val on = WatchState.on
     Surface(
         onClick = onClick, shape = RoundedCornerShape(50),
@@ -476,9 +495,11 @@ private fun WatchPill(onClick: () -> Unit, onDark: Boolean = false) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (on) Icons.Filled.LocationOn else Icons.Outlined.LocationOff, null, Modifier.size(16.dp),
                 tint = if (onDark) (if (on) Sun else Color.White.copy(alpha = 0.7f)) else if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(4.dp))
-            Text(if (on) tr("Store alert on", "Butikkvarsel på") else tr("Store alert off", "Butikkvarsel av"),
-                fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            if (!compact) {
+                Spacer(Modifier.width(4.dp))
+                Text(if (on) tr("Store alert on", "Butikkvarsel på") else tr("Store alert off", "Butikkvarsel av"),
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -500,7 +521,7 @@ private fun EmptyList() {
 
 @Composable
 fun ItemRow(item: Item, big: Boolean = false) {
-    val deal = Deals.results.firstOrNull { it.item == item.name }?.offers?.minByOrNull { it.price }
+    val deal = Deals.results.firstOrNull { it.item == item.name }?.let { Deals.offersFor(it) }?.minByOrNull { it.price }
     val pin = item.pin
     // Ticking an item: a quick pop, then it settles slightly faded.
     val fade by animateFloatAsState(if (item.checked) 0.62f else 1f, tween(300), label = "fade")

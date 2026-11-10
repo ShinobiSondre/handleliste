@@ -45,6 +45,13 @@ object Deals {
     const val FALLBACK_LAT = 59.9133
     const val FALLBACK_LNG = 10.7389
 
+    /** The store you want prices from (null = all), chosen on the list screen and remembered. */
+    var store by mutableStateOf<String?>(null)
+    fun loadStore(ctx: Context) { store = Settings.priceStore(ctx).ifBlank { null } }
+    fun chooseStore(ctx: Context, s: String?) { store = s; Settings.setPriceStore(ctx, s.orEmpty()) }
+    /** Deals for an item, at the chosen store only (or all stores). */
+    fun offersFor(d: ItemDeals): List<Offer> = store?.let { st -> d.offers.filter { Parse.sameChain(it.store, st) } } ?: d.offers
+
     /** Chains whose flyers were searched in the last check. */
     var chains by mutableStateOf<List<String>>(emptyList()); private set
 

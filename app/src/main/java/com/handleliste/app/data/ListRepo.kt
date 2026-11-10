@@ -224,6 +224,10 @@ object Settings {
     }
     fun setLastLocation(ctx: Context, lat: Double, lng: Double) = p(ctx).edit().putString("lastLoc", "$lat,$lng").apply()
 
+    /** The store you want prices from ("" = all stores). */
+    fun priceStore(ctx: Context) = p(ctx).getString("priceStore", "").orEmpty()
+    fun setPriceStore(ctx: Context, store: String) = p(ctx).edit().putString("priceStore", store).apply()
+
     fun onboarded(ctx: Context) = p(ctx).getBoolean("onboarded", false)
     fun setOnboarded(ctx: Context) = p(ctx).edit().putBoolean("onboarded", true).apply()
 }

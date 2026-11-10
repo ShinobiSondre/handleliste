@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
             .build())
         ListRepo.init(this)
         com.handleliste.app.data.DinnerPrefs.init(this)
+        com.handleliste.app.data.Deals.loadStore(this)
         StoreAlert.channels(this)
         enableEdgeToEdge()
         handle(intent)
