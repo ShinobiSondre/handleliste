@@ -90,6 +90,9 @@ object Dinner {
     else "Give me the recipe for \"${d.name}\": ingredients with amounts, and the method in short numbered steps. " +
         "This time answer ONLY with the recipe, without DISH lines at the end."
 
+    /** The hidden recipe questions (and their answers) aren't shown in the chat. */
+    fun isRecipeLabel(text: String) = text.startsWith("Oppskrift: ") || text.startsWith("Recipe: ")
+
     fun recipeLabel(d: Dish): String = (if (Lang.no) "Oppskrift: " else "Recipe: ") + d.name
 
     /** Groceries ChatGPT says you still need (from its last "HANDLE:" line). */

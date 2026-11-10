@@ -83,6 +83,10 @@ class MainActivity : ComponentActivity() {
             HandlelisteTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 LaunchedEffect(openTab.intValue) { if (openTab.intValue >= 0) { tab = openTab.intValue; openTab.intValue = -1 } }
+                LaunchedEffect(com.handleliste.app.ui.AppNav.request) {
+                    val r = com.handleliste.app.ui.AppNav.request
+                    if (r >= 0) { tab = r; com.handleliste.app.ui.AppNav.request = -1 }
+                }
                 // Deals are checked by themselves: when the app opens and a moment after the lists change.
                 val openNames = ListRepo.open.map { it.name + "/" + it.pin?.name.orEmpty() }.sorted().joinToString("|")
                 LaunchedEffect(openNames) {

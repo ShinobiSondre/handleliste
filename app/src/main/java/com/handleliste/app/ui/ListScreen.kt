@@ -1,6 +1,10 @@
 package com.handleliste.app.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.border
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -260,8 +264,26 @@ private fun RecipeCard(l: ShopList) {
             Text(tr("Add a recipe to this list", "Legg til oppskrift på listen"))
         }
     } else {
-        Surface(onClick = { open = !open }, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.tertiaryContainer,
-            modifier = Modifier.fillMaxWidth().animateContentSize()) {
+        // Just made from a dish: the card glows and a little "here it is" bounces until you open it.
+        val fresh = ChatUi.freshRecipe == l.id && !open
+        val t = rememberInfiniteTransition(label = "fresh")
+        val glow by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "g")
+        val bounce by t.animateFloat(0f, -6f, infiniteRepeatable(tween(500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b")
+        AnimatedVisibility(fresh, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).offset(y = bounce.dp), horizontalArrangement = Arrangement.Center) {
+                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary) {
+                    Text(tr("👇 Here's your recipe, tap to read", "👇 Her er oppskriften din, trykk for å lese"),
+                        Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+        Surface(onClick = { open = !open; if (ChatUi.freshRecipe == l.id) ChatUi.freshRecipe = null },
+            shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.tertiaryContainer,
+            modifier = Modifier.fillMaxWidth().animateContentSize()
+                .graphicsLayer { val k = if (fresh) 1f + glow * 0.02f else 1f; scaleX = k; scaleY = k }
+                .border(if (fresh) (2 + glow * 2).dp else 0.dp,
+                    if (fresh) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f + glow * 0.5f) else Color.Transparent, RoundedCornerShape(18.dp))) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.AutoMirrored.Filled.MenuBook, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)

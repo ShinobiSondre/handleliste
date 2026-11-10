@@ -2,6 +2,10 @@ package com.handleliste.app.ui
 
 import android.app.Activity
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.material3.ButtonDefaults
+import kotlinx.coroutines.delay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -315,12 +319,20 @@ sealed class ChatEntry(val key: String) {
     class Dishes(val turn: Int, val dishes: List<Dinner.Dish>, val answer: String) : ChatEntry("d$turn")
 }
 
+/** Lets screens ask the app to switch bottom tab (0 = List). */
+object AppNav {
+    var request by mutableIntStateOf(-1)
+    fun go(tab: Int) { request = tab }
+}
+
 /** Whether the dinner chat is on screen (drawn over the whole app by MainActivity). */
 object ChatUi {
     var open by mutableStateOf(false)
     /** Which lists the dinner is based on (empty = the list you're on). */
     val listIds = mutableStateListOf<String>()
     fun chosen(): List<String> = listIds.filter { id -> ListRepo.lists.any { it.id == id } }.ifEmpty { listOf(ListRepo.currentId) }
+    /** The list just made from a dish: its recipe card gets a "here it is" animation until you open it. */
+    var freshRecipe by mutableStateOf<String?>(null)
     /** A list waiting for its dish's recipe to arrive (dish name), and dishes already made into lists. */
     var pendingList by mutableStateOf<String?>(null)
     val madeLists = mutableStateListOf<String>()
@@ -350,8 +362,14 @@ fun DinnerChat(onClose: () -> Unit) {
     val shown = if (thinking && turns.lastOrNull()?.user == false) turns.dropLast(1) else turns
     val listNames = ChatUi.items().map { it.name }
     // One entry per thing on screen: a bubble, a price check, an "add to list" card.
+    // The recipe for a picked dish is fetched quietly: that question and its answer stay out of the chat.
+    fun hidden(i: Int): Boolean = shown[i].let { t ->
+        (t.user && Dinner.isRecipeLabel(t.text)) || (!t.user && i > 0 && shown[i - 1].user && Dinner.isRecipeLabel(shown[i - 1].text))
+    }
+    val fetchingRecipe = thinking && turns.lastOrNull { it.user }?.let { Dinner.isRecipeLabel(it.text) } == true
     val entries = buildList {
         shown.forEachIndexed { i, t ->
+            if (hidden(i)) return@forEachIndexed
             add(ChatEntry.Msg(i, t.user, if (t.user) t.text else Dinner.display(t.text)))
             val dishes = if (t.user) emptyList() else Dinner.dishes(t.text)
             if (!t.user && dishes.isNotEmpty() && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
@@ -360,7 +378,6 @@ fun DinnerChat(onClose: () -> Unit) {
                 val missing = Dinner.missing(t.text)
                 val fromList = if (ChatUi.budget != null) Dinner.usedFromList(t.text, listNames) else emptyList()
                 if (ChatUi.budget != null && (missing.isNotEmpty() || fromList.isNotEmpty())) add(ChatEntry.Price(i, missing, fromList))
-                if (missing.isNotEmpty()) add(ChatEntry.Add(i, missing))
             }
         }
     }
@@ -372,6 +389,8 @@ fun DinnerChat(onClose: () -> Unit) {
     }
     LaunchedEffect(shown.size, status) {
         if (entries.isEmpty()) return@LaunchedEffect
+        val recipeTurn = turns.lastOrNull { it.user }?.let { Dinner.isRecipeLabel(it.text) } == true
+        if (recipeTurn) return@LaunchedEffect // a quiet recipe fetch: don't move the chat
         if (thinking) listState.animateScrollToItem(entries.size) // the typing animation
         else if (status == ChatGptBridge.Status.DONE) {
             // The top of the newest answer, so you start reading from its beginning.
@@ -421,7 +440,7 @@ fun DinnerChat(onClose: () -> Unit) {
                             latest = e.turn == entries.filterIsInstance<ChatEntry.Dishes>().lastOrNull()?.turn)
                     }
                 }
-                if (thinking) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
+                if (thinking && !fetchingRecipe) item(key = "typing") { Typing(writing = turns.lastOrNull()?.user == false) }
                 error?.let { e ->
                     item {
                         Column {
@@ -572,10 +591,6 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
                 val everything = Dinner.ingredientsForList(d, listNames, recipe)
                 val onList = everything.filter { it in listNames }
                 val extra = everything.filter { it !in listNames }
-                if (recipe == null) Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp))
-                    Text(tr("Getting the full recipe for ${d.name}…", "Henter hele oppskriften på ${d.name} …"), fontSize = 13.sp)
-                }
                 if (everything.isNotEmpty()) PriceCheck(extra, onList, ChatUi.budget)
                 MakeListButton(d, recipe, asked = qi >= 0)
             }
@@ -584,8 +599,8 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
 }
 
 /**
- * "Lag handleliste med oppskrift": a new list with every ingredient in the recipe and the recipe itself.
- * If the recipe hasn't been fetched yet, it's fetched first and the list is made when it arrives.
+ * The one choice after picking a dish: "Legg til i listen med oppskrift". It gently pulses to invite a tap,
+ * shows progress while the recipe arrives, pops a check when the list is made, then takes you to the list.
  */
 @Composable
 private fun MakeListButton(d: Dinner.Dish, recipe: String?, asked: Boolean) {
@@ -593,30 +608,49 @@ private fun MakeListButton(d: Dinner.Dish, recipe: String?, asked: Boolean) {
     val waiting = ChatUi.pendingList == d.name && recipe == null
     fun make(text: String) {
         val items = Dinner.ingredientsForList(d, ChatUi.items().map { it.name }, text)
-        ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name], text)
+        val id = ListRepo.newListFrom(d.name, items, ChatUi.dishPics[d.name], text)
         ChatUi.madeLists += d.name
         ChatUi.pendingList = null
+        ChatUi.freshRecipe = id
     }
     LaunchedEffect(recipe, ChatUi.pendingList) {
         if (recipe != null && ChatUi.pendingList == d.name && !made) make(recipe)
     }
-    OutlinedButton(
+    // After the check mark has popped: close the chat and show the new list.
+    LaunchedEffect(made) {
+        if (made && ChatUi.freshRecipe != null) { delay(900); ChatUi.open = false; AppNav.go(0) }
+    }
+    val pulse = rememberInfiniteTransition(label = "pulse")
+    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "glow")
+    val pop by animateFloatAsState(if (made) 1f else 0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow), label = "pop")
+    val idle = !made && !waiting
+    Button(
         onClick = {
             if (recipe != null) make(recipe) else {
-                // The recipe is on its way (asked when you picked the dish): make the list when it's here.
                 ChatUi.pendingList = d.name
                 if (!asked && ChatGptBridge.status.value != ChatGptBridge.Status.THINKING)
                     ChatGptBridge.followUp(Dinner.recipeLabel(d), Dinner.recipeQuestion(d))
             }
         },
-        enabled = !made && !waiting, modifier = Modifier.fillMaxWidth()
+        enabled = idle,
+        colors = ButtonDefaults.buttonColors(
+            disabledContainerColor = if (made) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            disabledContentColor = MaterialTheme.colorScheme.onPrimary),
+        modifier = Modifier.fillMaxWidth().height(56.dp)
+            .graphicsLayer { val k = if (idle) 1f + glow * 0.025f else 1f + pop * 0.04f * (1f - pop); scaleX = k; scaleY = k }
+            .border(if (idle) (2 + glow * 3).dp else 0.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (idle) 0.35f * (1f - glow) else 0f), RoundedCornerShape(50))
     ) {
-        Icon(if (made) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+        when {
+            made -> Icon(Icons.Filled.Check, null, Modifier.size((18 + pop * 6).dp))
+            waiting -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            else -> Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(10.dp))
         Text(when {
-            made -> tr("New list \"${d.name}\" made", "Ny liste «${d.name}» er laget")
-            waiting -> tr("Getting the recipe, then making the list…", "Henter oppskriften og lager listen …")
-            else -> tr("Make a shopping list + recipe for ${d.name}", "Lag handleliste med oppskrift: ${d.name}")
-        }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            made -> tr("Added! Opening your list…", "Lagt til! Åpner listen …")
+            waiting -> tr("Getting the recipe…", "Henter oppskriften …")
+            else -> tr("Add to list with recipe", "Legg til i listen med oppskrift")
+        }, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
