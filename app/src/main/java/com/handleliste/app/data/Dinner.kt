@@ -123,13 +123,13 @@ object Dinner {
     /** One dish ChatGPT suggested: what to buy for it, and which list items it uses. */
     data class Dish(val name: String, val buy: List<String>, val uses: List<String>, val imageQuery: String = "", val all: List<String> = emptyList())
 
-    private fun items(s: String) = s.replace("*", "").split(",", ";").map { it.trim().trimEnd('.') }
+    private fun items(s: String) = s.split(",", ";").map { Parse.cleanName(it).trimEnd('.') }
         .filter { it.lowercase() !in EMPTY && it.length < 40 }
 
     /** The dishes from ChatGPT's "RETT: name | HANDLE: … | BRUKER: …" lines. */
     fun dishes(answer: String): List<Dish> = DISH_LINE.findAll(answer).mapNotNull { m ->
         val parts = m.groupValues[2].split("|").map { it.trim() }
-        val name = parts.first().replace("*", "").trim().trimEnd('.')
+        val name = Parse.cleanName(parts.first()).trimEnd('.')
         if (name.isBlank()) return@mapNotNull null
         fun part(vararg keys: String) = parts.drop(1).firstOrNull { p -> keys.any { p.uppercase().startsWith(it) } }
             ?.substringAfter(":")?.let { items(it) }.orEmpty()
@@ -182,7 +182,8 @@ object Dinner {
 
     /** "400 g kjøttdeig", "1 liten boks mais (ca. 200 g)", "2 ss tacokrydder, gjerne mild" → "Kjøttdeig", "Mais", "Tacokrydder". */
     fun ingredientName(line: String): String? {
-        var t = line.trim().trimStart('•', '-', '*', '–', ' ').replace("**", "")
+        if (line.trim().startsWith("#")) return null // a sub-heading ("### Til sausen"), not an ingredient
+        var t = Parse.cleanName(line)
         t = t.replace(Regex("\\([^)]*\\)"), " ").substringBefore(",").substringBefore(" – ").substringBefore(" - ")
         t = t.replace(Regex("(?i)\\b(etter smak|til steking|til servering|til pynt|for serving|to taste)\\b.*"), "")
         val words = t.trim().split(Regex("\\s+")).dropWhile { w ->

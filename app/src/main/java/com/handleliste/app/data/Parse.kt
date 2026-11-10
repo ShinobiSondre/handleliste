@@ -513,8 +513,12 @@ object Parse {
             .minByOrNull { it.second }?.first
     }
 
+    /** Markdown left over from ChatGPT ("## Taco", "**ost**", "• mais") never belongs in an item's name. */
+    fun cleanName(s: String): String = s.replace("**", "").replace(Regex("#+"), " ")
+        .replace(Regex("^[\\s•*\\-–>]+"), "").replace(Regex("\\s+"), " ").trim()
+
     /** Splits "melk, brød og egg" into three items. */
     fun splitItems(input: String): List<String> =
-        input.split(Regex(",|;|\\n| og | and ")).map { it.trim() }.filter { it.isNotBlank() }
+        input.split(Regex(",|;|\\n| og | and ")).map { cleanName(it) }.filter { it.isNotBlank() }
             .map { it.replaceFirstChar { c -> c.uppercase() } }
 }

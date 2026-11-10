@@ -345,4 +345,13 @@ Fremgangsmåte
         assertEquals(listOf("EGG FRITTGÅENDE", "GÅRDSEGG"), Parse.matchOffers("egg", offers).map { it.heading })
         assertTrue(!Parse.offerMatches("egg", offers[0]))
     }
+
+    @Test fun noMarkdownInNames() {
+        assertEquals(listOf("Taco", "Ost", "Mais"), Parse.splitItems("## Taco, **ost**, • mais"))
+        val D = com.handleliste.app.data.Dinner
+        assertEquals("Tacogryte", D.dishes("RETT: ## Tacogryte | HANDLE: ### rømme | BRUKER: ingenting").single().name)
+        assertEquals(listOf("Rømme"), D.dishes("RETT: ## Tacogryte | HANDLE: ### rømme | BRUKER: ingenting").single().buy.map { it.replaceFirstChar { c -> c.uppercase() } })
+        val r = "### Ingredienser\n• 400 g kjøttdeig\n### Til sausen\n• 2 dl rømme\n### Fremgangsmåte\n1. Stek."
+        assertEquals(listOf("Kjøttdeig", "Rømme"), D.ingredientsFromRecipe(r))
+    }
 }

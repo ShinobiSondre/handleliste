@@ -736,8 +736,9 @@ internal fun markdown(s: String): AnnotatedString = buildAnnotatedString {
     s.lines().forEachIndexed { i, raw ->
         if (i > 0) append("\n")
         var line = raw
-        val heading = Regex("^\\s*#{1,6}\\s+").find(line)
+        val heading = Regex("^\\s*#{1,6}\\s*").find(line)?.takeIf { line.trim().length > it.value.trim().length }
         if (heading != null) line = line.substring(heading.range.last + 1)
+        line = line.replace(Regex("#{2,}"), "") // any stray ## left in the middle of a line
         line = line.replace(Regex("^(\\s*)[-*]\\s+"), "$1• ")
         if (heading != null) { withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 17.sp)) { append(line.replace("**", "")) }; return@forEachIndexed }
         val parts = line.split("**")
