@@ -591,7 +591,11 @@ private fun DishPicker(turn: Int, dishes: List<Dinner.Dish>, listNames: List<Str
                 val everything = Dinner.ingredientsForList(d, listNames, recipe)
                 val onList = everything.filter { it in listNames }
                 val extra = everything.filter { it !in listNames }
-                if (everything.isNotEmpty()) PriceCheck(extra, onList, ChatUi.budget)
+                // Wait for the full recipe, then price everything once (no figures jumping about).
+                if (recipe == null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp))
+                    Text(tr("Getting the recipe and today's prices…", "Henter oppskriften og dagens priser …"), fontSize = 14.sp)
+                } else if (everything.isNotEmpty()) PriceCheck(extra, onList, ChatUi.budget)
                 MakeListButton(d, recipe, asked = qi >= 0)
             }
         }

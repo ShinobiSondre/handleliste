@@ -180,14 +180,19 @@ object Dinner {
     private val UNITS = setOf("g", "gram", "kg", "hg", "dl", "l", "liter", "ml", "cl", "ss", "ts", "spiseskje", "spiseskjeer", "teskje", "teskjeer",
         "stk", "stykk", "boks", "bokser", "pakke", "pakker", "pk", "pose", "poser", "beger", "fedd", "klype", "neve", "skive", "skiver",
         "kopp", "kopper", "glass", "flaske", "bunt", "ca", "cirka", "liten", "lite", "små", "stor", "stort", "store", "middels", "evt", "eventuelt",
-        "cup", "cups", "tbsp", "tsp", "can", "cans", "pack", "packet", "bag", "jar", "slice", "slices", "clove", "cloves", "pinch", "small", "large", "medium", "x")
-    private val SKIP = setOf("vann", "water", "kaldt vann", "varmt vann")
+        "cup", "cups", "tbsp", "tsp", "can", "cans", "pack", "packet", "bag", "jar", "slice", "slices", "clove", "cloves", "pinch", "small", "large", "medium", "x",
+        "litt", "noe", "gjerne", "en", "et", "ei", "god", "godt", "fersk", "frisk", "some", "a", "an", "few", "little", "fresh")
+    /** Things everyone has at home (the question to ChatGPT says so too): not bought, not priced. */
+    private val SKIP = setOf("vann", "water", "kaldt vann", "varmt vann", "salt", "pepper", "salt og pepper", "salt and pepper",
+        "sort pepper", "nykvernet pepper", "black pepper", "is", "isbiter")
 
     /** "400 g kjøttdeig", "1 liten boks mais (ca. 200 g)", "2 ss tacokrydder, gjerne mild" → "Kjøttdeig", "Mais", "Tacokrydder". */
     fun ingredientName(line: String): String? {
         if (line.trim().startsWith("#")) return null // a sub-heading ("### Til sausen"), not an ingredient
         var t = Parse.cleanName(line)
         t = t.replace(Regex("\\([^)]*\\)"), " ").substringBefore(",").substringBefore(" – ").substringBefore(" - ")
+        // "chilipulver eller hvitløkspulver" / "rømme or yoghurt": the first one is enough.
+        t = t.split(Regex("(?i)\\s+(eller|or|/)\\s+")).first()
         t = t.replace(Regex("(?i)\\b(etter smak|til steking|til servering|til pynt|for serving|to taste)\\b.*"), "")
         val words = t.trim().split(Regex("\\s+")).dropWhile { w ->
             val l = w.lowercase().trimEnd('.', ':')
@@ -230,9 +235,10 @@ object Dinner {
     fun ingredientsForList(d: Dish, list: List<String>, recipe: String? = null): List<String> {
         // The recipe's own ingredient list is the most complete; ChatGPT's ALT line fills in the rest.
         val fromRecipe = recipe?.let { ingredientsFromRecipe(it) }.orEmpty()
-        val base = (fromRecipe + d.all.ifEmpty { d.uses + d.buy }).fold(ArrayList<String>()) { acc, n -> if (acc.none { same(it, n) }) acc += n; acc }
+        val base = (fromRecipe + d.all.ifEmpty { d.uses + d.buy }.mapNotNull { ingredientName(it) })
+            .fold(ArrayList<String>()) { acc, n -> if (acc.none { same(it, n) }) acc += n; acc }
         val named = base.map { ing -> list.firstOrNull { same(it, ing) } ?: ing.replaceFirstChar { it.uppercase() } }
-        val extra = d.buy.filter { b -> named.none { same(it, b) } }.map { it.replaceFirstChar { c -> c.uppercase() } }
+        val extra = d.buy.mapNotNull { ingredientName(it) }.filter { b -> named.none { same(it, b) } }
         val out = ArrayList<String>()
         (named + extra).forEach { n -> if (out.none { same(it, n) }) out += n }
         return out

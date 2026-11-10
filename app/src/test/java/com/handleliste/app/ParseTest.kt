@@ -354,4 +354,17 @@ Fremgangsmåte
         val r = "### Ingredienser\n• 400 g kjøttdeig\n### Til sausen\n• 2 dl rømme\n### Fremgangsmåte\n1. Stek."
         assertEquals(listOf("Kjøttdeig", "Rømme"), D.ingredientsFromRecipe(r))
     }
+
+    @Test fun realIngredientsAndProducts() {
+        val D = com.handleliste.app.data.Dinner
+        assertEquals("Chilipulver", D.ingredientName("Litt chilipulver eller hvitløkspulver"))
+        assertEquals(null, D.ingredientName("Salt og pepper"))
+        assertEquals("Spisskål", D.ingredientName("1/2 spisskål, strimlet"))
+        fun p(n: String) = com.handleliste.app.data.Product(n, "", "", 30.0, null, null)
+        assertTrue(!Parse.productIs("chilipulver", p("REMA 1000 Nice Flerkornchips Jalapeño")))
+        assertTrue(Parse.productIs("chilipulver", p("Chilipulver Santa Maria")))
+        assertTrue(!Parse.productIs("salt", p("Sørlandschips Verdens Tynneste Rifla Havsalt og pepper")))
+        assertTrue(Parse.productIs("taco chips", p("Taco chips Santa Maria")))
+        assertTrue(Parse.productIs("olje", p("Rapsolje Eldorado")))
+    }
 }

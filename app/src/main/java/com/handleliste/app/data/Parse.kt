@@ -440,6 +440,7 @@ object Parse {
         if (words.isEmpty()) return false
         val hw = o.heading.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
         if (hw.size > 4 || hw.any { it in setOf("og", "med", "and", "with") }) return false
+        if (hw.any { w -> SNACKS.any { s -> w == s || w.endsWith(s) } } && words.none { w -> SNACKS.any { w.contains(it) } }) return false
         return words.all { w -> hw.any { it == w || endsAs(it, w) || (it.startsWith(w) && it.length <= w.length + 2) } }
     }
 
@@ -454,6 +455,20 @@ object Parse {
         val mine = if (pin == null) kind.take(10) else kind.filter { pinMatches(pin, it) }.take(10)
         val others = if (pin == null) emptyList() else kind.filter { it !in mine && sameKind(pin, term, it) }.take(10)
         return mine to others
+    }
+
+    private val SNACKS = setOf("chips", "potetgull", "snacks", "nachos", "popcorn", "godteri", "sjokolade", "kjeks", "crisps", "dip", "dipmix", "pålegg")
+
+    /**
+     * Is this product the thing itself, good for pricing an ingredient? "Salt" → salt, not
+     * "Sørlandschips Havsalt og pepper"; "chilipulver" → chili powder, not "Nice Flerkornchips Jalapeño".
+     */
+    fun productIs(term: String, p: Product): Boolean {
+        val words = term.lowercase().split(" ").filter { it.length >= 3 }
+        if (words.isEmpty()) return false
+        val tw = p.name.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotBlank() }
+        if (tw.any { w -> SNACKS.any { s -> w == s || w.endsWith(s) } } && words.none { w -> SNACKS.any { w.contains(it) } }) return false
+        return words.all { w -> tw.any { it == w || endsAs(it, w) || (it.startsWith(w) && it.length <= w.length + 3) } }
     }
 
     /** Does a deal really belong to this list item? (Search results can be loose.) */

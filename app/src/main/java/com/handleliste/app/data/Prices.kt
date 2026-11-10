@@ -57,8 +57,10 @@ object Prices {
                         .filter { (pin == null || Parse.pinMatches(pin, it)) && Parse.plainProduct(term, it) }.minByOrNull { it.price }
                     if (deal != null) PriceLine(item, deal.price, deal.store, deal.heading.lowercase(), true)
                     else {
+                        // The best-matching real product (ranked by the search), not just the cheapest hit:
+                        // cheapest among the top few that really are the thing.
                         val p = runCatching { Catalog.search(pin?.name?.let { Parse.keywords(it).take(4).joinToString(" ") } ?: term) }.getOrDefault(emptyList())
-                            .take(8).filter { it.price != null }.minByOrNull { it.price!! }
+                            .filter { it.price != null && (pin != null || Parse.productIs(term, it)) }.take(3).minByOrNull { it.price!! }
                         if (p != null) PriceLine(item, p.price, p.source, p.name, false)
                         else PriceLine(item, null, "", "", false)
                     }
