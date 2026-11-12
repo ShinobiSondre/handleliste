@@ -50,11 +50,9 @@ fun Modifier.sparkles(t: () -> Float, color: Color = Color(0xFFFFE082)): Modifie
     drawContent()
     for (s in SPOTS) {
         val k = sin((((t() + s[2]) % 1f) * PI).toFloat())
-        if (k > 0.05f) star(Offset(s[0] * size.width, s[1] * size.height), 6.dp2px(this) * k, color.copy(alpha = k))
+        if (k > 0.05f) star(Offset(s[0] * size.width, s[1] * size.height), 6f * density * k, color.copy(alpha = k))
     }
 }
-
-private fun Float.dp2px(d: DrawScope) = this * d.density
 
 private fun DrawScope.star(c: Offset, r: Float, color: Color) {
     val p = Path().apply {
