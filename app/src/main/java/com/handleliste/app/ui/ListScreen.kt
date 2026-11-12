@@ -25,6 +25,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
@@ -264,26 +265,32 @@ private fun RecipeCard(l: ShopList) {
             Text(tr("Add a recipe to this list", "Legg til oppskrift på listen"))
         }
     } else {
-        // Just made from a dish: the card glows and a little "here it is" bounces until you open it.
+        // Just made from a dish: only the little gold "here it is" pointer moves (Holmstead Plus style); the card stays still.
         val fresh = ChatUi.freshRecipe == l.id && !open
+        val clock = rememberSparkleClock()
         val t = rememberInfiniteTransition(label = "fresh")
-        val glow by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "g")
-        val bounce by t.animateFloat(0f, -6f, infiniteRepeatable(tween(500, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b")
+        val bounce by t.animateFloat(0f, -5f, infiniteRepeatable(tween(650, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "b")
         AnimatedVisibility(fresh, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).offset(y = bounce.dp), horizontalArrangement = Arrangement.Center) {
-                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary) {
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
+                Box(Modifier
+                    .offset(y = bounce.dp)
+                    .graphicsLayer { val k = pulseOf(clock.value); scaleX = k; scaleY = k }
+                    .sparkles({ clock.value })
+                    .shadow((6 + 6 * kotlin.math.abs(kotlin.math.sin(clock.value * 2 * Math.PI))).dp, RoundedCornerShape(50),
+                        ambientColor = Color(0xFFF2B630), spotColor = Color(0xFFF2B630))
+                    .clip(RoundedCornerShape(50))
+                    .background(GoldBrush)
+                    .shimmer({ clock.value })
+                    .clickable { open = true; ChatUi.freshRecipe = null }) {
                     Text(tr("👇 Here's your recipe, tap to read", "👇 Her er oppskriften din, trykk for å lese"),
-                        Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.onPrimary,
+                        Modifier.padding(horizontal = 16.dp, vertical = 7.dp), color = Color(0xFF4A3300),
                         fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }
         Surface(onClick = { open = !open; if (ChatUi.freshRecipe == l.id) ChatUi.freshRecipe = null },
             shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.tertiaryContainer,
-            modifier = Modifier.fillMaxWidth().animateContentSize()
-                .graphicsLayer { val k = if (fresh) 1f + glow * 0.02f else 1f; scaleX = k; scaleY = k }
-                .border(if (fresh) (2 + glow * 2).dp else 0.dp,
-                    if (fresh) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f + glow * 0.5f) else Color.Transparent, RoundedCornerShape(18.dp))) {
+            modifier = Modifier.fillMaxWidth().animateContentSize()) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.AutoMirrored.Filled.MenuBook, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)

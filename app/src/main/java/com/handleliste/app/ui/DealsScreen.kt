@@ -105,6 +105,7 @@ fun DealsScreen() {
     val scope = rememberCoroutineScope()
     var zoom by remember { mutableStateOf<Offer?>(null) }
     var showFollows by remember { mutableStateOf(false) }
+    var category by remember { mutableStateOf<com.handleliste.app.data.Category?>(null) }
     // Search all of this week's deals near you for any food, not just what's on your lists.
     var query by rememberSaveable { mutableStateOf("") }
     var found by remember { mutableStateOf<List<Offer>?>(null) }
@@ -175,6 +176,11 @@ fun DealsScreen() {
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, tr("Clear", "Tøm")) } }
             )
+        }
+        if (found == null) {
+            // Categories: subscribe to e.g. pizza, then pick the exact pizzas you want alerts for.
+            Spacer(Modifier.height(10.dp))
+            CategoryRow { category = it }
         }
         if (ListRepo.lists.size > 1 && found == null) {
             Spacer(Modifier.height(8.dp))
@@ -271,12 +277,13 @@ fun DealsScreen() {
         }
     }
     zoom?.let { OfferImageViewer(it) { zoom = null } }
-    if (showFollows) FollowsSheet { showFollows = false }
+    if (showFollows) FollowsSheet(onOpenCategory = { showFollows = false; category = it }) { showFollows = false }
+    category?.let { c -> CategorySheet(c, onClose = { category = null }, onImage = { zoom = it }) }
 }
 
 /** Everything you follow for deal alerts: remove, or follow something new by name. */
 @Composable
-private fun FollowsSheet(onClose: () -> Unit) {
+private fun FollowsSheet(onOpenCategory: (com.handleliste.app.data.Category) -> Unit, onClose: () -> Unit) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf("") }
     val perm = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -312,15 +319,22 @@ private fun FollowsSheet(onClose: () -> Unit) {
                 Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                     Alerts.follows.forEach { f ->
                         val onSale = Deals.results.firstOrNull { it.item.equals(f.name, true) }?.offers?.minByOrNull { it.price }
-                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val cat = com.handleliste.app.data.Categories.byId(f.cat)
+                        Row(Modifier.fillMaxWidth().clickable(enabled = cat != null) { cat?.let(onOpenCategory) }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(Color.White), contentAlignment = Alignment.Center) {
-                                if (f.pin?.image != null) AsyncImage(f.pin.image, null, Modifier.fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+                                if (cat != null) Text(cat.emoji, fontSize = 22.sp)
+                                else if (f.pin?.image != null) AsyncImage(f.pin.image, null, Modifier.fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
                                 else Icon(Icons.Filled.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary)
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(f.name, fontWeight = FontWeight.SemiBold)
-                                Text(f.pin?.name ?: tr("Any kind", "Alle typer"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(when {
+                                    cat != null && f.picks.isEmpty() -> tr("Category · every deal", "Kategori · alle tilbud")
+                                    cat != null -> f.picks.joinToString(", ") { it.name }
+                                    else -> f.pin?.name ?: tr("Any kind", "Alle typer")
+                                }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 if (onSale != null) Text("🏷️ ${kr(onSale.price)} · ${onSale.store}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
                             }
                             TextButton(onClick = { Alerts.unfollow(ctx, f.name) }) { Text(tr("Stop", "Stopp")) }

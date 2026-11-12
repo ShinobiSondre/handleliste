@@ -30,8 +30,11 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-/** Something you follow: an item ("Pesto"), optionally a specific product or type you picked. */
-data class Follow(val id: String, val name: String, val pin: Pin?)
+/**
+ * Something you follow: an item ("Pesto"), optionally a specific product or type you picked.
+ * Or a whole category ([cat] = "pizza"): with no [picks] every deal in it alerts you, with picks only those products do.
+ */
+data class Follow(val id: String, val name: String, val pin: Pin?, val cat: String? = null, val picks: List<Pin> = emptyList())
 
 /**
  * "Tell me when it's on sale": items you follow are checked against this week's flyers near you
@@ -53,7 +56,9 @@ object Alerts {
             val a = JSONArray(prefs(ctx).getString("follows", "[]"))
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                follows += Follow(o.getString("id"), o.getString("name"), o.optJSONObject("pin")?.let { pinFrom(it) })
+                val picks = o.optJSONArray("picks") ?: JSONArray()
+                follows += Follow(o.getString("id"), o.getString("name"), o.optJSONObject("pin")?.let { pinFrom(it) },
+                    o.optString("cat").ifBlank { null }, (0 until picks.length()).map { pinFrom(picks.getJSONObject(it)) })
             }
         }
     }
@@ -68,7 +73,10 @@ object Alerts {
 
     private fun save(ctx: Context) {
         val a = JSONArray()
-        follows.forEach { f -> a.put(JSONObject().put("id", f.id).put("name", f.name).put("pin", f.pin?.let { pinJson(it) } ?: JSONObject.NULL)) }
+        follows.forEach { f ->
+            a.put(JSONObject().put("id", f.id).put("name", f.name).put("pin", f.pin?.let { pinJson(it) } ?: JSONObject.NULL)
+                .put("cat", f.cat ?: "").put("picks", JSONArray().apply { f.picks.forEach { put(pinJson(it)) } }))
+        }
         prefs(ctx).edit().putString("follows", a.toString()).apply()
     }
 
@@ -81,6 +89,48 @@ object Alerts {
         if (i >= 0) follows[i] = follows[i].copy(pin = pin) else follows += Follow(UUID.randomUUID().toString(), name.trim().replaceFirstChar { it.uppercase() }, pin)
         save(ctx)
         schedule(ctx, checkNow = true)
+    }
+
+    /** Your subscription to a category, if any. */
+    fun category(id: String) = follows.firstOrNull { it.cat == id }
+
+    /** Subscribe to a category (all of it until you pick specific products). */
+    fun subscribe(ctx: Context, c: Category) {
+        init(ctx)
+        if (category(c.id) == null) follows += Follow(UUID.randomUUID().toString(), c.no.takeIf { Lang.no } ?: c.en, null, c.id)
+        save(ctx)
+        schedule(ctx, checkNow = true)
+    }
+
+    fun unsubscribe(ctx: Context, c: Category) {
+        init(ctx)
+        follows.removeAll { it.cat == c.id }
+        save(ctx)
+        if (follows.isEmpty()) WorkManager.getInstance(ctx).cancelUniqueWork("deal-alerts")
+    }
+
+    fun isPicked(c: Category, p: Pin) = category(c.id)?.picks?.any { it.name.equals(p.name, true) } == true
+
+    /** Tick or untick one product in a category; ticking subscribes you to the category. */
+    fun togglePick(ctx: Context, c: Category, p: Pin) {
+        init(ctx)
+        if (category(c.id) == null) subscribe(ctx, c)
+        val i = follows.indexOfFirst { it.cat == c.id }
+        val f = follows[i]
+        val picks = if (f.picks.any { it.name.equals(p.name, true) }) f.picks.filterNot { it.name.equals(p.name, true) } else f.picks + p
+        follows[i] = f.copy(picks = picks)
+        save(ctx)
+        schedule(ctx, checkNow = true)
+    }
+
+    /** This week's deals that would alert you for a follow. */
+    fun dealsFor(f: Follow, flyers: List<Offer>, now: String): List<Offer> {
+        val c = Categories.byId(f.cat)
+        return when {
+            c != null && f.picks.isEmpty() -> Categories.offers(c, flyers, now)
+            c != null -> f.picks.flatMap { p -> Parse.dealsFor(Parse.searchTerm(p.name), p, flyers, now).first }.distinctBy { it.id }
+            else -> Parse.dealsFor(Parse.searchTerm(f.name), f.pin, flyers, now).first
+        }
     }
 
     fun unfollow(ctx: Context, name: String) {
@@ -120,7 +170,7 @@ object Alerts {
         val p = prefs(ctx)
         val told = p.getStringSet("told", emptySet())!!.toMutableSet()
         follows.toList().forEach { f ->
-            val (mine, _) = Parse.dealsFor(Parse.searchTerm(f.name), f.pin, flyers, now)
+            val mine = dealsFor(f, flyers, now)
             val fresh = mine.filter { "${f.id}:${it.id}" !in told }
             if (fresh.isNotEmpty()) {
                 notify(ctx, f, fresh)
@@ -138,7 +188,10 @@ object Alerts {
         if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(
             NotificationChannel(CHANNEL, tr("Deals on things you follow", "Tilbud på det du følger"), NotificationManager.IMPORTANCE_DEFAULT))
         val best = offers.minBy { it.price }
-        val what = f.pin?.name ?: f.name
+        val what = when {
+            f.cat != null && offers.size == 1 -> offers[0].heading.lowercase().replaceFirstChar { it.uppercase() }
+            else -> f.pin?.name ?: f.name
+        }
         val price = "kr " + String.format(java.util.Locale("nb", "NO"), "%.2f", best.price)
         val pct = best.savingsPct?.takeIf { it in 1..95 }?.let { " (−$it %)" }.orEmpty()
         val open = PendingIntent.getActivity(ctx, f.id.hashCode(),

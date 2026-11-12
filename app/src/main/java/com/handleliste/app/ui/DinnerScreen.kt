@@ -1,5 +1,7 @@
 package com.handleliste.app.ui
 
+import androidx.compose.ui.draw.shadow
+
 import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.Spring
@@ -624,8 +626,8 @@ private fun MakeListButton(d: Dinner.Dish, recipe: String?, asked: Boolean) {
     LaunchedEffect(made) {
         if (made && ChatUi.freshRecipe != null) { delay(900); ChatUi.open = false; AppNav.go(0) }
     }
-    val pulse = rememberInfiniteTransition(label = "pulse")
-    val glow by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "glow")
+    // Holmstead Plus style: breathing pulse, a band of light sweeping across, and little stars twinkling around it.
+    val clock = rememberSparkleClock()
     val pop by animateFloatAsState(if (made) 1f else 0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow), label = "pop")
     val idle = !made && !waiting
     Button(
@@ -641,8 +643,12 @@ private fun MakeListButton(d: Dinner.Dish, recipe: String?, asked: Boolean) {
             disabledContainerColor = if (made) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
             disabledContentColor = MaterialTheme.colorScheme.onPrimary),
         modifier = Modifier.fillMaxWidth().height(56.dp)
-            .graphicsLayer { val k = if (idle) 1f + glow * 0.025f else 1f + pop * 0.04f * (1f - pop); scaleX = k; scaleY = k }
-            .border(if (idle) (2 + glow * 3).dp else 0.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (idle) 0.35f * (1f - glow) else 0f), RoundedCornerShape(50))
+            .graphicsLayer { val k = if (idle) pulseOf(clock.value) else 1f + pop * 0.04f * (1f - pop); scaleX = k; scaleY = k }
+            .then(if (idle) Modifier.sparkles({ clock.value }) else Modifier)
+            .shadow(if (idle) (4 + 6 * kotlin.math.abs(kotlin.math.sin(clock.value * 2 * Math.PI))).dp else 2.dp, RoundedCornerShape(50),
+                ambientColor = MaterialTheme.colorScheme.primary, spotColor = MaterialTheme.colorScheme.primary)
+            .clip(RoundedCornerShape(50))
+            .then(if (idle) Modifier.shimmer({ clock.value }, alpha = 0.4f) else Modifier)
     ) {
         when {
             made -> Icon(Icons.Filled.Check, null, Modifier.size((18 + pop * 6).dp))

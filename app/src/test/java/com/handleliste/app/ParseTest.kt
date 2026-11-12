@@ -367,4 +367,18 @@ Fremgangsmåte
         assertTrue(Parse.productIs("taco chips", p("Taco chips Santa Maria")))
         assertTrue(Parse.productIs("olje", p("Rapsolje Eldorado")))
     }
+
+    @Test fun pizzaCategory() {
+        val c = com.handleliste.app.data.Categories.byId("pizza")!!
+        val flyers = listOf(offer("GRANDIOSA ORIGINAL", p = 39.9), offer("Big One Pepperoni pizza", p = 45.0),
+            offer("Pizzasaus", p = 19.0), offer("Pizzabunn 2 stk", p = 25.0), offer("Tine Lettmelk", p = 22.0))
+        val got = com.handleliste.app.data.Categories.offers(c, flyers).map { it.heading }
+        assertTrue(got.toString(), "GRANDIOSA ORIGINAL" in got && "Big One Pepperoni pizza" in got)
+        assertTrue(got.toString(), got.none { it.startsWith("Pizza") || it.contains("melk") })
+        // A picked pizza only alerts for that pizza.
+        val pin = Parse.pinFromOffer(flyers[0])
+        val f = com.handleliste.app.data.Follow("x", "Pizza", null, "pizza", listOf(pin))
+        val mine = com.handleliste.app.data.Alerts.dealsFor(f, flyers, "").map { it.heading }
+        assertEquals(listOf("GRANDIOSA ORIGINAL"), mine)
+    }
 }
