@@ -108,6 +108,17 @@ fun SettingsScreen() {
                         "Samsung og noen andre telefoner stopper apper i bakgrunnen. Hvis varselet slutter å komme, sett batteriet for Handleliste til «Ubegrenset»."),
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextButton(onClick = { openBatterySettings(ctx) }) { Text(tr("Battery settings", "Batteriinnstillinger")) }
+                    // Android 14+: the full-screen in-store deals page needs this one switch.
+                    if (Build.VERSION.SDK_INT >= 34 &&
+                        !ctx.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()) {
+                        Text(tr("To open the big deals screen by itself when you walk into a store, allow full-screen notifications.",
+                            "For at den store tilbudsskjermen skal åpne seg selv når du går inn i en butikk, tillat varsler i fullskjerm."),
+                            fontSize = 13.sp)
+                        TextButton(onClick = {
+                            runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                android.net.Uri.parse("package:" + ctx.packageName))) }
+                        }) { Text(tr("Allow full screen", "Tillat fullskjerm")) }
+                    }
                 }
                 OutlinedButton(onClick = { StoreAlert.show(ctx, "KIWI (test)") }) {
                     Text(tr("Try it: pretend I'm in a store", "Prøv: lat som jeg er i en butikk"))

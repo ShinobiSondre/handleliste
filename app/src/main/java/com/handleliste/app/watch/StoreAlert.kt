@@ -76,6 +76,8 @@ object StoreAlert {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
             .setContentIntent(openIntent(ctx, store))
+            // Opens the in-store deals screen by itself, full screen, where Android allows it.
+            .setFullScreenIntent(openIntent(ctx, store), true)
             .addAction(0, tr("Open list", "Åpne listen"), openIntent(ctx, store))
             .build()
         if (Build.VERSION.SDK_INT < 33 ||
