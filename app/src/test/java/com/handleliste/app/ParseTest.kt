@@ -383,19 +383,18 @@ Fremgangsmåte
     }
 
     @Test fun aisles() {
-        val A = com.handleliste.app.data.Aisle
         fun a(n: String) = com.handleliste.app.data.Aisles.of(n)
-        assertEquals(A.DAIRY, a("Lettmelk"))
-        assertEquals(A.DAIRY, a("Sjokolademelk"))
-        assertEquals(A.DELI, a("Kyllingpålegg"))
-        assertEquals(A.MEAT, a("Kjøttdeig"))
-        assertEquals(A.PRODUCE, a("Bananer"))
-        assertEquals(A.FISH, a("Torskefilet"))
-        assertEquals(A.DAIRY, a("Egg"))
-        assertEquals(A.DELI, a("pålegg"))
-        assertEquals(A.CANS, a("Hakkede tomater"))
-        assertEquals(A.HOME, a("Dopapir"))
-        assertEquals(A.FROZEN, a("Grandiosa"))
-        assertEquals(A.DRY, a("Spaghetti"))
+        assertEquals(com.handleliste.app.data.Aisle.DAIRY, a("Lettmelk"))
+        assertEquals(com.handleliste.app.data.Aisle.DAIRY, a("Sjokolademelk"))
+        assertEquals(com.handleliste.app.data.Aisle.DELI, a("Kyllingpålegg"))
+        assertEquals(com.handleliste.app.data.Aisle.MEAT, a("Kjøttdeig"))
+        assertEquals(com.handleliste.app.data.Aisle.PRODUCE, a("Bananer"))
+        assertEquals(com.handleliste.app.data.Aisle.FISH, a("Torskefilet"))
+        assertEquals(com.handleliste.app.data.Aisle.DAIRY, a("Egg"))
+        assertEquals(com.handleliste.app.data.Aisle.DELI, a("pålegg"))
+        assertEquals(com.handleliste.app.data.Aisle.CANS, a("Hakkede tomater"))
+        assertEquals(com.handleliste.app.data.Aisle.HOME, a("Dopapir"))
+        assertEquals(com.handleliste.app.data.Aisle.FROZEN, a("Grandiosa"))
+        assertEquals(com.handleliste.app.data.Aisle.DRY, a("Spaghetti"))
     }
 }
