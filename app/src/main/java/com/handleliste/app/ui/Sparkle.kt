@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -87,7 +88,7 @@ fun Confetti(key: Any, modifier: Modifier = Modifier) {
             if (y < -20f || y > size.height) return@forEach
             val x = p[0] * size.width + sin(t * 9f + p[2]) * 18f * density
             val w = 7f * density; val h = 12f * density
-            androidx.compose.ui.graphics.drawscope.rotate(p[3] + t * 540f, Offset(x, y)) {
+            rotate(p[3] + t * 540f, Offset(x, y)) {
                 drawRect(colors[p[4].toInt()].copy(alpha = (1f - t * t).coerceIn(0f, 1f)), Offset(x - w / 2, y - h / 2),
                     androidx.compose.ui.geometry.Size(w, h))
             }
