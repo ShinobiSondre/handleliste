@@ -1,5 +1,13 @@
 package com.handleliste.app.ui
 
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.handleliste.app.data.Aisles
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -227,14 +235,23 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
             item { EmptyList() }
         }
 
-        items(open, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it) } }
+        // Sorted the way you walk through the store, with a heading per section.
+        if (Settings.byAisle(ctx) && open.size >= 3) {
+            Aisles.group(open).forEach { (aisle, its) ->
+                item(key = "aisle-" + aisle.name) {
+                    Text("${aisle.emoji}  " + tr(aisle.en, aisle.no), Modifier.animateItem().padding(top = 12.dp, bottom = 4.dp, start = 4.dp),
+                        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+                items(its, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it) } }
+            }
+        } else items(open, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it) } }
 
         if (done.isNotEmpty()) {
             item(key = "done-header") {
                 Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(tr("In the cart (${done.size})", "I kurven (${done.size})"), style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { ListRepo.clearChecked() }) { Text(tr("Clear", "Fjern")) }
+                    TextButton(onClick = { Undo.offer(tr("Cleared ${done.size} ticked", "Fjernet ${done.size} avkryssede"), ListRepo.clearCheckedWithUndo()) }) { Text(tr("Clear", "Fjern")) }
                 }
             }
             items(done, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it) } }
@@ -548,8 +565,49 @@ private fun EmptyList() {
     }
 }
 
+/**
+ * One item. Swipe right to tick it off, left to delete it (with "Angre"), with a little buzz either way.
+ */
 @Composable
 fun ItemRow(item: Item, big: Boolean = false) {
+    val haptic = LocalHapticFeedback.current
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            when (v) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListRepo.toggle(item.id); false
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    Undo.offer(tr("Removed ${item.name}", "Fjernet ${item.name}"), ListRepo.removeWithUndo(item.id)); true
+                }
+                else -> false
+            }
+        },
+        positionalThreshold = { it * 0.33f },
+    )
+    SwipeToDismissBox(state, backgroundContent = {
+        val dir = state.dismissDirection
+        val toRight = dir == SwipeToDismissBoxValue.StartToEnd
+        val color = when (dir) {
+            SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
+            SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error
+            else -> Color.Transparent
+        }
+        Box(Modifier.fillMaxSize().padding(vertical = 3.dp).clip(RoundedCornerShape(16.dp)).background(color).padding(horizontal = 20.dp),
+            contentAlignment = if (toRight) Alignment.CenterStart else Alignment.CenterEnd) {
+            if (dir != SwipeToDismissBoxValue.Settled) Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (toRight) Icons.Filled.Check else Icons.Filled.Delete, null, tint = Color.White)
+                Spacer(Modifier.width(8.dp))
+                Text(if (toRight) (if (item.checked) tr("Back on the list", "Tilbake på listen") else tr("In the cart", "I kurven")) else tr("Delete", "Slett"),
+                    color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }) { ItemRowContent(item, big) }
+}
+
+@Composable
+private fun ItemRowContent(item: Item, big: Boolean) {
     val deal = Deals.results.firstOrNull { it.item == item.name }?.let { Deals.offersFor(it) }?.minByOrNull { it.price }
     val pin = item.pin
     // Ticking an item: a quick pop, then it settles slightly faded.
@@ -586,7 +644,7 @@ fun ItemRow(item: Item, big: Boolean = false) {
             Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    item.name, fontSize = if (big) 22.sp else 17.sp,
+                    item.name, fontSize = if (big && InStoreUi.huge) 30.sp else if (big) 22.sp else 17.sp,
                     fontWeight = if (big) FontWeight.SemiBold else FontWeight.Normal,
                     textDecoration = if (item.checked) TextDecoration.LineThrough else null,
                     color = if (item.checked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
@@ -612,7 +670,7 @@ fun ItemRow(item: Item, big: Boolean = false) {
                 if (pin == null && !item.checked) IconButton(onClick = { PickerUi.itemId = item.id }) {
                     Icon(Icons.Outlined.ImageSearch, tr("Choose product", "Velg vare"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = { ListRepo.remove(item.id) }) {
+                IconButton(onClick = { Undo.offer(tr("Removed ${item.name}", "Fjernet ${item.name}"), ListRepo.removeWithUndo(item.id)) }) {
                     Icon(Icons.Filled.Close, tr("Remove", "Fjern"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

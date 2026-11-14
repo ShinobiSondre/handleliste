@@ -7,6 +7,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -45,12 +47,23 @@ private val Dark = darkColorScheme(
     surfaceVariant = Color(0xFF26302A), onSurfaceVariant = Color(0xFFB4C2B9),
     surfaceContainer = Color(0xFF1B231E), surfaceContainerHigh = Color(0xFF222B25),
     outline = Color(0xFF5E6B63), outlineVariant = Color(0xFF39443D),
+    surfaceContainerLow = Color(0xFF131A16), surfaceContainerHighest = Color(0xFF2A342E),
+    inverseSurface = Color(0xFFE2E9E4), inverseOnSurface = Color(0xFF1B231E), inversePrimary = Green,
+    error = Color(0xFFFFB4A8), onError = Color(0xFF690005),
 )
+
+/** Light, dark or follow the phone. */
+object ThemeMode {
+    var mode by androidx.compose.runtime.mutableIntStateOf(0) // 0 phone, 1 light, 2 dark
+    fun init(ctx: android.content.Context) { mode = ctx.getSharedPreferences("settings", 0).getInt("theme", 0) }
+    fun set(ctx: android.content.Context, m: Int) { mode = m; ctx.getSharedPreferences("settings", 0).edit().putInt("theme", m).apply() }
+}
 
 @Composable
 fun HandlelisteTheme(content: @Composable () -> Unit) {
     val t = Typography()
-    val scheme = if (isSystemInDarkTheme()) Dark else Light
+    val dark = when (ThemeMode.mode) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
+    val scheme = if (dark) Dark else Light
     MaterialTheme(
         colorScheme = scheme,
         typography = t.copy(

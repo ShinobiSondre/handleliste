@@ -72,6 +72,8 @@ class MainActivity : ComponentActivity() {
             .crossfade(true)
             .build())
         ListRepo.init(this)
+        com.handleliste.app.ui.ThemeMode.init(this)
+        com.handleliste.app.ui.InStoreUi.huge = Settings.bigText(this)
         com.handleliste.app.data.DinnerPrefs.init(this)
         com.handleliste.app.data.Deals.loadStore(this)
         StoreAlert.channels(this)
@@ -141,6 +143,7 @@ class MainActivity : ComponentActivity() {
                     if (ChatUi.open) DinnerChat(onClose = { ChatUi.open = false })
                     InStoreSplash()
                     ProductPicker()
+                    com.handleliste.app.ui.UndoBar()
                     UpdateOverlay()
                 }
             }

@@ -381,4 +381,21 @@ Fremgangsmåte
         val mine = com.handleliste.app.data.Alerts.dealsFor(f, flyers, "").map { it.heading }
         assertEquals(listOf("GRANDIOSA ORIGINAL"), mine)
     }
+
+    @Test fun aisles() {
+        val A = com.handleliste.app.data.Aisle
+        fun a(n: String) = com.handleliste.app.data.Aisles.of(n)
+        assertEquals(A.DAIRY, a("Lettmelk"))
+        assertEquals(A.DAIRY, a("Sjokolademelk"))
+        assertEquals(A.DELI, a("Kyllingpålegg"))
+        assertEquals(A.MEAT, a("Kjøttdeig"))
+        assertEquals(A.PRODUCE, a("Bananer"))
+        assertEquals(A.FISH, a("Torskefilet"))
+        assertEquals(A.DAIRY, a("Egg"))
+        assertEquals(A.DELI, a("pålegg"))
+        assertEquals(A.CANS, a("Hakkede tomater"))
+        assertEquals(A.HOME, a("Dopapir"))
+        assertEquals(A.FROZEN, a("Grandiosa"))
+        assertEquals(A.DRY, a("Spaghetti"))
+    }
 }

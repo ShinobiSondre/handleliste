@@ -75,11 +75,17 @@ import com.handleliste.app.data.ListRepo
 import com.handleliste.app.util.tr
 import com.handleliste.app.watch.StoreAlert
 
+/** In-store view state: extra large text. */
+object InStoreUi {
+    var huge by mutableStateOf(false)
+}
+
 /** Full-screen "you're in the store" list: big tick boxes, and what's on sale in this store. */
 @Composable
 fun InStoreSplash() {
     val ctx = LocalContext.current
     val store = StoreAlert.splash
+    LaunchedEffect(Unit) { InStoreUi.huge = com.handleliste.app.data.Settings.bigText(ctx) }
     // Fresh deals for this trip, if the last check is old.
     LaunchedEffect(store) {
         if (store != null && ListRepo.open.isNotEmpty() && (Deals.results.isEmpty() || System.currentTimeMillis() - Deals.fetchedAt > 6 * 3600_000L)) {
@@ -118,6 +124,11 @@ fun InStoreSplash() {
                             else tr("${open.size} left to pick up", "${open.size} igjen å plukke"),
                             color = Color(0xFFFFD54F), fontSize = 14.sp, fontWeight = FontWeight.Bold
                         )
+                    }
+                    // Aa: extra large text, for one hand on the trolley.
+                    Surface(onClick = { InStoreUi.huge = !InStoreUi.huge; com.handleliste.app.data.Settings.setBigText(ctx, InStoreUi.huge) },
+                        shape = CircleShape, color = Color.White.copy(alpha = if (InStoreUi.huge) 0.35f else 0.18f), modifier = Modifier.size(40.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Text("Aa", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp) }
                     }
                     IconButton(onClick = { StoreAlert.splash = null }) { Icon(Icons.Filled.Close, tr("Close", "Lukk"), tint = Color.White) }
                 }
@@ -180,7 +191,14 @@ fun InStoreSplash() {
                             }
                         }
                     }
-                    items(left, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it, big = true) } }
+                    // Walking order through the store, a heading per section.
+                    com.handleliste.app.data.Aisles.group(left).forEach { (aisle, its) ->
+                        if (left.size >= 3) item(key = "a-" + aisle.name, span = { GridItemSpan(maxLineSpan) }) {
+                            Text("${aisle.emoji}  " + tr(aisle.en, aisle.no), Modifier.padding(top = 10.dp, bottom = 2.dp),
+                                fontSize = if (InStoreUi.huge) 20.sp else 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        items(its, key = { it.id }) { Box(Modifier.animateItem()) { ItemRow(it, big = true) } }
+                    }
                     if (left.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(tr("✓ Everything on this list is in the cart", "✓ Alt på denne listen er i kurven"),
                             Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
@@ -196,7 +214,10 @@ fun InStoreSplash() {
             }
             Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)) {
                 Button(
-                    onClick = { ListRepo.clearChecked(all = true); StoreAlert.splash = null },
+                    onClick = {
+                        Undo.offer(tr("Cleared ${done.size} ticked", "Fjernet ${done.size} avkryssede"), ListRepo.clearCheckedWithUndo(all = true))
+                        StoreAlert.splash = null
+                    },
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {

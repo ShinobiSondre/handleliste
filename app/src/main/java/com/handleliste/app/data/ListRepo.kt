@@ -188,6 +188,24 @@ object ListRepo {
 
     fun remove(id: String) { val (l, i) = find(id) ?: return; l.removeAt(i); save() }
 
+    /** Removes an item and returns how to put it back (for "Angre"). */
+    fun removeWithUndo(id: String): (() -> Unit)? {
+        val (l, i) = find(id) ?: return null
+        val it = l.removeAt(i); save()
+        return { if (find(it.id) == null) { l.add(i.coerceAtMost(l.size), it); save() } }
+    }
+
+    /** Ticked items removed after shopping, so they can be put back. */
+    fun clearCheckedWithUndo(all: Boolean = false): (() -> Unit)? {
+        val gone = (if (all) byList.values.toList() else listOf(items)).flatMap { l -> l.filter { it.checked }.map { l to it } }
+        if (gone.isEmpty()) return null
+        clearChecked(all)
+        return { gone.forEach { (l, it) -> if (find(it.id) == null) l.add(it) }; save() }
+    }
+
+    /** Which list an item is on. */
+    fun listOfItem(id: String): ShopList? = byList.entries.firstOrNull { (_, l) -> l.any { it.id == id } }?.let { (k, _) -> lists.firstOrNull { it.id == k } }
+
     fun rename(id: String, name: String) {
         val (l, i) = find(id) ?: return
         if (name.isNotBlank()) { l[i] = l[i].copy(name = name.trim()); save() }
@@ -227,6 +245,14 @@ object Settings {
     /** The store you want prices from ("" = all stores). */
     fun priceStore(ctx: Context) = p(ctx).getString("priceStore", "").orEmpty()
     fun setPriceStore(ctx: Context, store: String) = p(ctx).edit().putString("priceStore", store).apply()
+
+    /** Sort the list by store section (on by default). */
+    fun byAisle(ctx: Context) = p(ctx).getBoolean("byAisle", true)
+    fun setByAisle(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean("byAisle", on).apply()
+
+    /** Extra large text in the in-store view. */
+    fun bigText(ctx: Context) = p(ctx).getBoolean("bigText", false)
+    fun setBigText(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean("bigText", on).apply()
 
     fun onboarded(ctx: Context) = p(ctx).getBoolean("onboarded", false)
     fun setOnboarded(ctx: Context) = p(ctx).edit().putBoolean("onboarded", true).apply()

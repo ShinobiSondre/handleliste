@@ -79,6 +79,34 @@ fun SettingsScreen() {
             }
         }
 
+        Section(tr("Look and list", "Utseende og liste")) {
+            val themes = listOf(0 to tr("Phone", "Telefon"), 1 to tr("Light", "Lys"), 2 to tr("Dark", "Mørk"))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                themes.forEachIndexed { i, (m, label) ->
+                    SegmentedButton(selected = ThemeMode.mode == m, onClick = { ThemeMode.set(ctx, m) },
+                        shape = SegmentedButtonDefaults.itemShape(i, themes.size)) { Text(label) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            var aisle by remember { mutableStateOf(Settings.byAisle(ctx)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Sort by store section", "Sorter etter avdeling"), fontWeight = FontWeight.SemiBold)
+                    Text(tr("Fruit & veg first, frozen last, like walking through the store.", "Frukt og grønt først, frys til slutt, slik du går gjennom butikken."),
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = aisle, onCheckedChange = { aisle = it; Settings.setByAisle(ctx, it) })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Extra large text in the store", "Ekstra stor tekst i butikken"), fontWeight = FontWeight.SemiBold)
+                    Text(tr("Easier to read with one hand on the trolley. Also the Aa button in the store.", "Lettere å lese med én hånd på vogna. Også Aa-knappen i butikken."),
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = InStoreUi.huge, onCheckedChange = { InStoreUi.huge = it; Settings.setBigText(ctx, it) })
+            }
+        }
+
         Section(tr("Store reminder", "Butikkvarsel")) {
             key(refresh) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
