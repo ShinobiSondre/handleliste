@@ -142,7 +142,13 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
     val suggestions = remember(History.version, ListRepo.open.size) { History.suggestions(ctx) }
 
     fun add() {
-        if (text.isNotBlank()) { ListRepo.add(text); text = "" }
+        if (text.isBlank()) return
+        // Never twice on a list; and a heads-up if it's already on another list.
+        val elsewhere = ListRepo.add(text); text = ""
+        elsewhere.firstOrNull()?.let { (name, other) ->
+            val here = ListRepo.items.firstOrNull { com.handleliste.app.data.Parse.sameItem(it.name, name) }
+            Undo.offer(tr("$name is also on \"${other.name}\"", "$name står også på «${other.name}»"), here?.let { h -> { ListRepo.remove(h.id) } })
+        }
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 24.dp)) {

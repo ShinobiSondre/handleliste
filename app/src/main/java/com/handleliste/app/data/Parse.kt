@@ -532,6 +532,26 @@ object Parse {
     fun cleanName(s: String): String = s.replace("**", "").replace(Regex("#+"), " ")
         .replace(Regex("^[\\s•*\\-–>]+"), "").replace(Regex("\\s+"), " ").trim()
 
+    /** "Rømme (3 dl)", "2 stk Tomater" → "tomater": the item itself, without amounts or spaces. */
+    fun itemKey(name: String): String =
+        searchTerm(name.replace(Regex("\\([^)]*\\)"), " ")).replace(Regex("[\\s-]+"), "")
+
+    private val IRREGULAR = mapOf("gulrøtter" to "gulrot", "føtter" to "fot", "bønner" to "bønne", "nøtter" to "nøtt", "kjøttboller" to "kjøttbolle")
+
+    /**
+     * Is this the same thing on a list? "Tomat" = "tomater", "Eple" = "epler", "Rømme" = "Rømme (3 dl)",
+     * "Taco chips" = "tacochips". But "Melk" ≠ "Lettmelk" and "Ost" ≠ "Brunost": those are different things.
+     */
+    fun sameItem(a: String, b: String): Boolean {
+        val x = itemKey(a).let { IRREGULAR[it] ?: it }
+        val y = itemKey(b).let { IRREGULAR[it] ?: it }
+        if (x.isEmpty() || y.isEmpty()) return false
+        if (x == y) return true
+        val (s, l) = if (x.length <= y.length) x to y else y to x
+        if (s.length < 3 || !l.startsWith(s)) return false
+        return l.removePrefix(s) in setOf("r", "er", "e", "ene", "en", "a", "s")
+    }
+
     /** Splits "melk, brød og egg" into three items. */
     fun splitItems(input: String): List<String> =
         input.split(Regex(",|;|\\n| og | and ")).map { cleanName(it) }.filter { it.isNotBlank() }

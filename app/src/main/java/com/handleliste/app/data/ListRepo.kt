@@ -69,6 +69,7 @@ object ListRepo {
         }
         if (lists.none { it.id == currentId }) currentId = lists.first().id
         loaded = true
+        byList.values.forEach { dedupe(it) }
         save()
     }
 
@@ -132,7 +133,8 @@ object ListRepo {
         currentId = meta.id
         // Added one by one (not split on commas), so "Rømme (1,5 dl)" stays one item.
         val target = byList.getValue(meta.id)
-        items.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.reversed().forEach { name ->
+        items.map { it.trim() }.filter { it.isNotBlank() }
+            .fold(ArrayList<String>()) { acc, n -> if (acc.none { Parse.sameItem(it, n) }) acc += n; acc }.reversed().forEach { name ->
             target.add(0, Item(UUID.randomUUID().toString(), name.replaceFirstChar { c -> c.uppercase() }, pin = lastPins[name.substringBefore(" (").lowercase()]))
             History.added(app, name.substringBefore(" ("))
         }
@@ -169,21 +171,49 @@ object ListRepo {
     fun openByList(): List<Pair<ShopList, List<Item>>> =
         lists.map { it to byList[it.id].orEmpty().filter { i -> !i.checked } }.filter { it.second.isNotEmpty() }
 
-    fun add(text: String, listId: String = currentId) {
+    /**
+     * Adds items, never twice: if the same thing is already on the list ("tomater" when "Tomat" is there),
+     * it's just un-ticked, and gets the amount if the new one has it ("Rømme" → "Rømme (3 dl)").
+     * Returns what was already on another list, so the screen can say so.
+     */
+    fun add(text: String, listId: String = currentId): List<Pair<String, ShopList>> {
         val target = byList.getOrPut(listId) { mutableStateListOf() }
+        val elsewhere = ArrayList<Pair<String, ShopList>>()
         Parse.splitItems(text).forEach { name ->
-            val i = target.indexOfFirst { it.name.equals(name, true) }
-            if (i >= 0) target[i] = target[i].copy(checked = false) // already there: just un-tick it
-            else target.add(0, Item(UUID.randomUUID().toString(), name, pin = lastPins[name.lowercase()]))
+            val i = target.indexOfFirst { Parse.sameItem(it.name, name) }
+            if (i >= 0) {
+                val old = target[i]
+                target[i] = old.copy(checked = false, name = if (name.contains("(") && !old.name.contains("(")) name else old.name)
+            } else {
+                target.add(0, Item(UUID.randomUUID().toString(), name, pin = lastPins[name.lowercase()]))
+                lists.firstOrNull { l -> l.id != listId && byList[l.id].orEmpty().any { !it.checked && Parse.sameItem(it.name, name) } }
+                    ?.let { elsewhere += name to it }
+            }
             History.added(app, name)
         }
         save()
+        return elsewhere
+    }
+
+    /** Merges items that are the same thing on one list (from before this check existed). */
+    private fun dedupe(l: SnapshotStateList<Item>): Boolean {
+        var changed = false
+        var i = 0
+        while (i < l.size) {
+            val j = (i + 1 until l.size).firstOrNull { Parse.sameItem(l[i].name, l[it].name) }
+            if (j == null) { i++; continue }
+            val a = l[i]; val b = l[j]
+            l[i] = a.copy(checked = a.checked && b.checked, pin = a.pin ?: b.pin,
+                name = if (b.name.contains("(") && !a.name.contains("(")) b.name else a.name)
+            l.removeAt(j); changed = true
+        }
+        return changed
     }
 
     /** Adds one item with a chosen product (from the barcode scanner). */
     fun addWithPin(name: String, pin: Pin?, listId: String = currentId): String {
         val target = byList.getOrPut(listId) { mutableStateListOf() }
-        val i = target.indexOfFirst { it.name.equals(name, true) }
+        val i = target.indexOfFirst { Parse.sameItem(it.name, name) }
         val id = if (i >= 0) { target[i] = target[i].copy(checked = false, pin = pin ?: target[i].pin); target[i].id }
         else Item(UUID.randomUUID().toString(), name, pin = pin).also { target.add(0, it) }.id
         History.added(app, name)

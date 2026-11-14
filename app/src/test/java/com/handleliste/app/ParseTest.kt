@@ -425,4 +425,18 @@ Fremgangsmåte
         assertTrue(m.toString(), "Tomatpuré" in m)
         assertEquals(6, m.size)
     }
+
+    @Test fun noDoubles() {
+        assertTrue(Parse.sameItem("Tomat", "tomater"))
+        assertTrue(Parse.sameItem("Eple", "Epler"))
+        assertTrue(Parse.sameItem("Rømme", "Rømme (3 dl)"))
+        assertTrue(Parse.sameItem("Taco chips", "Tacochips"))
+        assertTrue(Parse.sameItem("melk", "Melk"))
+        assertTrue(Parse.sameItem("Gulrot", "gulrøtter"))
+        assertTrue(Parse.sameItem("2 stk løk", "Løk"))
+        assertTrue(!Parse.sameItem("Melk", "Lettmelk"))
+        assertTrue(!Parse.sameItem("Ost", "Brunost"))
+        assertTrue(!Parse.sameItem("Kylling", "Kyllingfilet"))
+        assertTrue(!Parse.sameItem("Egg", "Pålegg"))
+    }
 }
