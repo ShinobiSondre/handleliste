@@ -93,6 +93,7 @@ object Deals {
             Triple(res, failedNow, flyers.isNotEmpty())
           }.let { (r, f, any) -> r to (f to any) }
             results = found
+            runCatching { PriceHistory.record(ctx, found.flatMap { it.offers + it.others }) }
             chains = Flyers.chains
             if (failed.first) error = tr("Couldn't reach the deals service. Check your internet and try again.",
                 "Fikk ikke kontakt med tilbudstjenesten. Sjekk internett og prøv igjen.")

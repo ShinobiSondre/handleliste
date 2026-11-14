@@ -526,6 +526,7 @@ private fun OfferRow(o: Offer, forItem: String? = null, onImage: () -> Unit) {
             Text(o.heading, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
             val till = shortDate(o.runTill)
             if (till.isNotBlank()) Text(tr("Until $till", "Til og med $till"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            VerdictTag(o)
         }
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {

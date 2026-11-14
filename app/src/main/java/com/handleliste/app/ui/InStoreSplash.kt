@@ -318,6 +318,7 @@ private fun BigDealCard(item: String, list: String?, offers: List<Offer>, inCart
                         o.prePrice?.takeIf { it > o.price }?.let {
                             Text(kr(it), fontSize = 12.sp, textDecoration = TextDecoration.LineThrough, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        VerdictTag(o)
                         if (offers.size > 1) Text(tr("+${offers.size - 1} more deals", "+${offers.size - 1} tilbud til"), fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

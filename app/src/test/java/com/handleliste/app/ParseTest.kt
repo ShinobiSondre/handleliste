@@ -397,4 +397,21 @@ Fremgangsmåte
         assertEquals(com.handleliste.app.data.Aisle.FROZEN, a("Grandiosa"))
         assertEquals(com.handleliste.app.data.Aisle.DRY, a("Spaghetti"))
     }
+
+    @Test fun storeTotals() {
+        val D = com.handleliste.app.data.ItemDeals::class
+        val melk = com.handleliste.app.data.ItemDeals("Melk", "melk", listOf(offer("Lettmelk", "KIWI", 19.0)), emptyList())
+        val ost = com.handleliste.app.data.ItemDeals("Ost", "ost", listOf(offer("Norvegia", "REMA 1000", 80.0)), emptyList())
+        val t = com.handleliste.app.data.StoreTotals.compute(listOf(melk, ost), mapOf("Melk" to 25.0, "Ost" to 110.0), listOf("KIWI", "REMA 1000", "Clas Ohlson"))
+        assertEquals(listOf("REMA 1000", "KIWI"), t.map { it.chain })
+        assertEquals(105.0, t[0].total, 0.01) // 25 + 80
+        assertEquals(129.0, t[1].total, 0.01) // 19 + 110
+        assertTrue(D.simpleName != null)
+    }
+
+    @Test fun priceVerdict() {
+        assertNull(com.handleliste.app.data.PriceHistory.verdictFor(30.0, listOf(40.0)))
+        assertTrue(com.handleliste.app.data.PriceHistory.verdictFor(30.0, listOf(40.0, 35.0, 45.0))!!.good)
+        assertTrue(!com.handleliste.app.data.PriceHistory.verdictFor(50.0, listOf(40.0, 35.0, 45.0))!!.good)
+    }
 }

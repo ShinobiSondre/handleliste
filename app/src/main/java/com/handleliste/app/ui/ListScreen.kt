@@ -1,5 +1,6 @@
 package com.handleliste.app.ui
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.SwipeToDismissBox
@@ -195,6 +196,7 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
             )
             Spacer(Modifier.height(10.dp))
             DealsSummary(onOpenDeals)
+            CheapestStore()
             StorePicker()
             ListRepo.current?.let { l ->
                 Spacer(Modifier.height(10.dp))
@@ -673,6 +675,61 @@ private fun ItemRowContent(item: Item, big: Boolean) {
                 IconButton(onClick = { Undo.offer(tr("Removed ${item.name}", "Fjernet ${item.name}"), ListRepo.removeWithUndo(item.id)) }) {
                     Icon(Icons.Filled.Close, tr("Remove", "Fjern"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+    }
+}
+
+/** "Cheapest for your whole list": each chain's total, deals included, tap one to shop there. */
+@Composable
+private fun CheapestStore() {
+    val ctx = LocalContext.current
+    LaunchedEffect(Deals.results) { runCatching { com.handleliste.app.data.StoreTotals.refresh(ctx) } }
+    val totals = com.handleliste.app.data.StoreTotals.totals
+    if (totals.size < 2 || ListRepo.open.size < 2) return
+    var expanded by remember { mutableStateOf(false) }
+    val best = totals.first()
+    val worst = totals.last()
+    Spacer(Modifier.height(8.dp))
+    Surface(onClick = { expanded = !expanded }, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth().animateContentSize()) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("💰", fontSize = 18.sp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Cheapest for your whole list: ${best.chain}", "Billigst for hele listen: ${best.chain}"),
+                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(tr("About ${kr(best.total)}", "Ca. ${kr(best.total)}") +
+                        if (worst.total - best.total >= 5) tr(" · ${kr(worst.total - best.total)} less than ${worst.chain}", " · ${kr(worst.total - best.total)} mindre enn ${worst.chain}") else "",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f))
+                }
+                Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                val max = worst.total.coerceAtLeast(1.0)
+                totals.take(8).forEach { t ->
+                    val chosen = Deals.store?.let { com.handleliste.app.data.Parse.sameChain(it, t.chain) } == true
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .clickable { Deals.chooseStore(ctx, if (chosen) null else t.chain) }.padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(t.chain, Modifier.width(96.dp), fontWeight = if (t == best) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Box(Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.surface)) {
+                            Box(Modifier.fillMaxWidth((t.total / max).toFloat().coerceIn(0.05f, 1f)).fillMaxSize()
+                                .clip(RoundedCornerShape(5.dp)).background(if (t == best) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(kr(t.total), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        if (chosen) Text(" ✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                    }
+                    if (t.onSale > 0) Text(tr("   ${t.onSale} on sale", "   ${t.onSale} på tilbud"), fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f), modifier = Modifier.padding(start = 96.dp))
+                }
+                Text(tr("Deals this week, normal price for the rest. Tap a store to see prices from it.",
+                    "Ukens tilbud, vanlig pris for resten. Trykk på en butikk for å se priser derfra."),
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f), modifier = Modifier.padding(top = 6.dp))
             }
         }
     }

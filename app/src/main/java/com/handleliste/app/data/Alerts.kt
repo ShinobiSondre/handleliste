@@ -171,6 +171,7 @@ object Alerts {
         val told = p.getStringSet("told", emptySet())!!.toMutableSet()
         follows.toList().forEach { f ->
             val mine = dealsFor(f, flyers, now)
+            runCatching { PriceHistory.record(ctx, mine) }
             val fresh = mine.filter { "${f.id}:${it.id}" !in told }
             if (fresh.isNotEmpty()) {
                 notify(ctx, f, fresh)

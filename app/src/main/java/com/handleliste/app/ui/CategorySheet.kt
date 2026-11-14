@@ -226,6 +226,7 @@ private fun PickRow(name: String, detail: String, image: String?, offer: Offer?,
             Column(Modifier.weight(1f)) {
                 Text(name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
                 if (detail.isNotBlank()) Text(detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (offer != null) VerdictTag(offer)
                 if (offer != null) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(kr(offer.price), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.secondary, fontSize = 15.sp)
                     offer.savingsPct?.takeIf { it in 1..95 }?.let {

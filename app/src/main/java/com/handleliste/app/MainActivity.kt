@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
             .build())
         ListRepo.init(this)
         com.handleliste.app.ui.ThemeMode.init(this)
+        com.handleliste.app.data.PriceHistory.init(this)
         com.handleliste.app.ui.InStoreUi.huge = Settings.bigText(this)
         com.handleliste.app.data.DinnerPrefs.init(this)
         com.handleliste.app.data.Deals.loadStore(this)
