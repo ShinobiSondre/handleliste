@@ -145,6 +145,7 @@ class MainActivity : ComponentActivity() {
                     InStoreSplash()
                     ProductPicker()
                     com.handleliste.app.ui.UndoBar()
+                    com.handleliste.app.ui.CelebrationOverlay()
                     UpdateOverlay()
                 }
             }
@@ -165,6 +166,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        // A list shared from another phone (or any text) becomes a new list.
+        if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
+                val name = com.handleliste.app.ui.ShareList.receive(text)
+                android.widget.Toast.makeText(this, if (name != null) tr("Added the list \"$name\"", "La til listen «$name»")
+                    else tr("Found nothing to add in that text", "Fant ingen varer i teksten"), android.widget.Toast.LENGTH_LONG).show()
+                intent.action = null
+            }
+        }
         intent?.getStringExtra(StoreAlert.EXTRA_STORE)?.let { StoreAlert.splash = it }
         // A deal notification opens the Deals tab.
         intent?.getIntExtra(com.handleliste.app.data.Alerts.EXTRA_TAB, -1)?.takeIf { it >= 0 }?.let { openTab.intValue = it }

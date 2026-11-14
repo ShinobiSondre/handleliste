@@ -552,6 +552,27 @@ object Parse {
         return l.removePrefix(s) in setOf("r", "er", "e", "ene", "en", "a", "s")
     }
 
+    /** A list as text to share: "🛒 Taco\n☐ Kjøttdeig\n☐ Rømme (3 dl)\n…". */
+    fun listText(name: String, items: List<String>, footer: String): String =
+        "🛒 $name\n" + items.joinToString("\n") { "☐ $it" } + "\n\n$footer"
+
+    /**
+     * A shared list read back: the name from a "🛒" line, items from "☐", "•", "-", "*" or numbered lines.
+     * Plain text without markers counts one item per line (or comma-separated on a single line).
+     */
+    fun sharedList(text: String): Pair<String?, List<String>> {
+        val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
+        val name = lines.firstOrNull { it.startsWith("🛒") }?.removePrefix("🛒")?.trim()?.ifBlank { null }
+        val marked = lines.filter { Regex("^(☐|☑|✓|•|-|\\*|\\d+[.)])\\s*").containsMatchIn(it) }
+            .map { it.replace(Regex("^(☐|☑|✓|•|-|\\*|\\d+[.)])\\s*"), "").trim() }.filter { it.isNotBlank() }
+        val items = when {
+            marked.isNotEmpty() -> marked
+            lines.size == 1 -> splitItems(lines[0])
+            else -> lines.filter { !it.startsWith("🛒") && !it.contains("Handleliste", true) && it.length <= 60 }.map { cleanName(it) }
+        }
+        return name to items.map { it.replaceFirstChar { c -> c.uppercase() } }
+    }
+
     /** Splits "melk, brød og egg" into three items. */
     fun splitItems(input: String): List<String> =
         input.split(Regex(",|;|\\n| og | and ")).map { cleanName(it) }.filter { it.isNotBlank() }

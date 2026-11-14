@@ -1,5 +1,6 @@
 package com.handleliste.app.ui
 
+import androidx.compose.material.icons.filled.Share
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -177,6 +178,14 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
                             }
                             Text(l.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
                             if (count > 0) { Spacer(Modifier.width(6.dp)); Text("$count", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+                item {
+                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant, onClick = { ShareList.send(ctx, ListRepo.currentId) }) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
+                            Text(tr("Share", "Del"), fontSize = 14.sp)
                         }
                     }
                 }
@@ -570,7 +579,40 @@ private fun WatchPill(onClick: () -> Unit, onDark: Boolean = false, compact: Boo
 
 @Composable
 private fun EmptyList() {
-    Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    EmptyListContent()
+}
+
+/** Empty list: a floating cart, and one-tap staples (your usual ones first) to get going. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun EmptyListContent() {
+    val ctx = LocalContext.current
+    val usual = remember { History.suggestions(ctx).map { it.name } }
+    val staples = (usual + listOf(tr("Milk", "Melk"), tr("Bread", "Brød"), tr("Eggs", "Egg"), tr("Butter", "Smør"), tr("Cheese", "Ost"),
+        tr("Bananas", "Bananer"), tr("Coffee", "Kaffe"), tr("Toilet paper", "Dopapir")))
+        .fold(ArrayList<String>()) { acc, n -> if (acc.none { com.handleliste.app.data.Parse.sameItem(it, n) }) acc += n; acc }.take(10)
+    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        EmptyCart()
+        Spacer(Modifier.height(16.dp))
+        Text(tr("Quick add", "Legg til raskt"), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            staples.forEach { n ->
+                Surface(onClick = { ListRepo.add(n) }, shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+                    Text("${com.handleliste.app.data.Aisles.of(n).emoji} $n", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 14.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(tr("…or scan a barcode with the icon in the field above.", "… eller skann en strekkode med ikonet i feltet over."),
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun EmptyCart() {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         val float = rememberInfiniteTransition(label = "float")
         val dy by float.animateFloat(-5f, 5f, infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "dy")
         Box(Modifier.offset(y = dy.dp).size(84.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {

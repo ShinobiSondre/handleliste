@@ -439,4 +439,13 @@ Fremgangsmåte
         assertTrue(!Parse.sameItem("Kylling", "Kyllingfilet"))
         assertTrue(!Parse.sameItem("Egg", "Pålegg"))
     }
+
+    @Test fun shareRoundTrip() {
+        val text = Parse.listText("Taco", listOf("Kjøttdeig", "Rømme (3 dl)", "Tortilla"), "Sendt fra Handleliste.")
+        val (name, items) = Parse.sharedList(text)
+        assertEquals("Taco", name)
+        assertEquals(listOf("Kjøttdeig", "Rømme (3 dl)", "Tortilla"), items)
+        assertEquals(listOf("Melk", "Brød", "Egg"), Parse.sharedList("melk, brød og egg").second)
+        assertEquals(listOf("Melk", "Brød"), Parse.sharedList("- melk\n- brød").second)
+    }
 }

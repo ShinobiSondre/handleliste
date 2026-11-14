@@ -68,3 +68,29 @@ private fun DrawScope.star(c: Offset, r: Float, color: Color) {
 
 /** Holmstead's gold. */
 val GoldBrush = Brush.linearGradient(listOf(Color(0xFFFFE082), Color(0xFFF2B630), Color(0xFFFFB300)))
+
+/** A burst of falling confetti, played once each time [key] changes. */
+@androidx.compose.runtime.Composable
+fun Confetti(key: Any, modifier: Modifier = Modifier) {
+    val anim = androidx.compose.runtime.remember(key) { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(key) { anim.animateTo(1f, tween(2800, easing = LinearEasing)) }
+    val colors = listOf(Color(0xFFFFD54F), Color(0xFF6FD69C), Color(0xFFFF8A65), Color(0xFF64B5F6), Color(0xFFBA68C8), Color(0xFFF2B630))
+    val parts = androidx.compose.runtime.remember(key) {
+        val r = kotlin.random.Random(key.hashCode())
+        List(110) { floatArrayOf(r.nextFloat(), 0.6f + r.nextFloat() * 0.9f, r.nextFloat() * 6.28f, r.nextFloat() * 360f, r.nextInt(colors.size).toFloat(), -r.nextFloat() * 0.35f) }
+    }
+    androidx.compose.foundation.Canvas(modifier) {
+        val t = anim.value
+        if (t >= 1f) return@Canvas
+        parts.forEach { p ->
+            val y = (p[5] + t * p[1] * 1.4f) * size.height
+            if (y < -20f || y > size.height) return@forEach
+            val x = p[0] * size.width + sin(t * 9f + p[2]) * 18f * density
+            val w = 7f * density; val h = 12f * density
+            androidx.compose.ui.graphics.drawscope.rotate(p[3] + t * 540f, Offset(x, y)) {
+                drawRect(colors[p[4].toInt()].copy(alpha = (1f - t * t).coerceIn(0f, 1f)), Offset(x - w / 2, y - h / 2),
+                    androidx.compose.ui.geometry.Size(w, h))
+            }
+        }
+    }
+}
