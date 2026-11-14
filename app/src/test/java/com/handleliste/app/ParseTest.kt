@@ -414,4 +414,16 @@ Fremgangsmåte
         assertTrue(com.handleliste.app.data.PriceHistory.verdictFor(30.0, listOf(40.0, 35.0, 45.0))!!.good)
         assertTrue(!com.handleliste.app.data.PriceHistory.verdictFor(50.0, listOf(40.0, 35.0, 45.0))!!.good)
     }
+
+    @Test fun weekMerge() {
+        val D = com.handleliste.app.data.Dinner
+        val a = D.Dish("Taco", emptyList(), emptyList(), "", listOf("400 g kjøttdeig", "1 stk løk", "3 dl rømme", "1 pk tortilla"))
+        val b = D.Dish("Pasta", emptyList(), emptyList(), "", listOf("400 g kjøttdeig", "2 løk", "500 g spaghetti", "2 ss tomatpuré"))
+        val m = D.mergeWeek(listOf(a, b))
+        assertTrue(m.toString(), "Kjøttdeig (800 g)" in m)
+        assertTrue(m.toString(), "Løk (3)" in m)
+        assertTrue(m.toString(), "Rømme (3 dl)" in m)
+        assertTrue(m.toString(), "Tomatpuré" in m)
+        assertEquals(6, m.size)
+    }
 }

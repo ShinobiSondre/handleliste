@@ -129,7 +129,13 @@ object ListRepo {
         lists += meta
         byList[meta.id] = mutableStateListOf()
         currentId = meta.id
-        if (items.isNotEmpty()) add(items.joinToString(","), meta.id) else save()
+        // Added one by one (not split on commas), so "Rømme (1,5 dl)" stays one item.
+        val target = byList.getValue(meta.id)
+        items.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.reversed().forEach { name ->
+            target.add(0, Item(UUID.randomUUID().toString(), name.replaceFirstChar { c -> c.uppercase() }, pin = lastPins[name.substringBefore(" (").lowercase()]))
+            History.added(app, name.substringBefore(" ("))
+        }
+        save()
         return meta.id
     }
 
@@ -171,6 +177,17 @@ object ListRepo {
             History.added(app, name)
         }
         save()
+    }
+
+    /** Adds one item with a chosen product (from the barcode scanner). */
+    fun addWithPin(name: String, pin: Pin?, listId: String = currentId): String {
+        val target = byList.getOrPut(listId) { mutableStateListOf() }
+        val i = target.indexOfFirst { it.name.equals(name, true) }
+        val id = if (i >= 0) { target[i] = target[i].copy(checked = false, pin = pin ?: target[i].pin); target[i].id }
+        else Item(UUID.randomUUID().toString(), name, pin = pin).also { target.add(0, it) }.id
+        History.added(app, name)
+        save()
+        return id
     }
 
     private fun find(id: String): Pair<SnapshotStateList<Item>, Int>? {

@@ -71,6 +71,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // Background check for deals on things you follow
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Barcode scanner from Google Play services: no camera permission needed, the scan UI is Google's.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

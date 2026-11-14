@@ -83,6 +83,92 @@ object Dinner {
         return b.toString()
     }
 
+    private val DAYS_NO = listOf("Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag")
+    private val DAYS_EN = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    fun dayName(i: Int) = (if (Lang.no) DAYS_NO else DAYS_EN)[i % 7]
+
+    /** A week of dinners within a budget, sharing ingredients so less goes to waste. */
+    fun weekPrompt(days: Int, budget: Int, servings: Int, list: List<String>, extra: String, deals: List<String>, wishes: String, avoid: List<String> = emptyList()): String {
+        val b = StringBuilder()
+        if (Lang.no) {
+            b.append("Lag en ukesmeny: $days forskjellige middager (${DAYS_NO.take(days).joinToString(", ")}) til $servings ${if (servings == 1) "person" else "personer"}, " +
+                "som til sammen koster maks $budget kr å handle inn.\n")
+            b.append("Bruk gjerne de samme ingrediensene i flere retter (f.eks. resten av rømmen eller løken), så lite kastes og det blir billigere. Varier kjøkken og protein.\n")
+            if (deals.isNotEmpty()) { b.append("Ukens tilbud nær meg (ekte priser, bruk dem):\n"); deals.forEach { b.append(it).append("\n") } }
+            if (list.isNotEmpty()) b.append("Dette står allerede på handlelisten min: ${list.joinToString(", ")}\n")
+            if (extra.isNotBlank()) b.append("Dette har jeg hjemme fra før (koster ingenting): $extra\n")
+            if (wishes.isNotBlank()) b.append("Dette er viktig for meg, følg det: $wishes\n")
+            if (avoid.isNotEmpty()) b.append("Jeg har nylig fått disse forslagene, så velg andre: ${avoid.joinToString("; ")}\n")
+            b.append("Anta at jeg har salt, pepper, olje, smør og vanlige krydder. Svar KORT: én linje per dag («Mandag: navn – én setning»), og til slutt omtrentlig totalsum. Ingen oppskrifter.\n")
+            b.append("Avslutt svaret med én linje per rett, i dagsrekkefølge, nøyaktig slik: " +
+                "«RETT: <navn> | ALT: <alle ingrediensene med mengde for $servings personer, f.eks. 400 g kjøttdeig, 1 stk løk, 3 dl rømme, adskilt med komma, bruk hele tall og ikke komma inni mengder> | BILDE: <2–4 engelske ord som beskriver retten>». Ikke ta med salt, pepper, olje og krydder.")
+        } else {
+            b.append("Make a week's dinner plan: $days different dinners (${DAYS_EN.take(days).joinToString(", ")}) for $servings ${if (servings == 1) "person" else "people"}, " +
+                "costing at most $budget NOK in total to buy.\n")
+            b.append("Reuse ingredients across dishes (e.g. the rest of the sour cream or onions), so little is wasted and it's cheaper. Vary cuisine and protein.\n")
+            if (deals.isNotEmpty()) { b.append("This week's deals near me (real prices, use them):\n"); deals.forEach { b.append(it).append("\n") } }
+            if (list.isNotEmpty()) b.append("Already on my shopping list: ${list.joinToString(", ")}\n")
+            if (extra.isNotBlank()) b.append("Already at home (free): $extra\n")
+            if (wishes.isNotBlank()) b.append("This matters to me, follow it: $wishes\n")
+            if (avoid.isNotEmpty()) b.append("I was recently suggested these, so choose others: ${avoid.joinToString("; ")}\n")
+            b.append("Assume I have salt, pepper, oil, butter and common spices. Answer SHORT: one line per day (\"Monday: name – one sentence\"), then the rough total. No recipes.\n")
+            b.append("End the answer with one line per dish, in day order, exactly like this: " +
+                "\"DISH: <name> | ALL: <every ingredient with amount for $servings people, e.g. 400 g minced beef, 1 onion, 3 dl sour cream, comma-separated, whole numbers, no commas inside amounts> | IMAGE: <2-4 English words describing the dish>\". Leave out salt, pepper, oil and spices.")
+        }
+        return b.toString()
+    }
+
+    /** An amount at the start of an ingredient: "400 g kjøttdeig" → (400, "g"), "2 løk" → (2, "stk"). */
+    data class Amount(val qty: Double, val unit: String)
+
+    private val AMOUNT = Regex("(?i)^\\s*(\\d+(?:[.,]\\d+)?|½|¼|¾)\\s*(kg|g|gram|hg|l|liter|dl|cl|ml|stk|pk|pakke|pakker|boks|bokser|ss|ts|fedd|bunt|beger|glass|pose|poser)?\\b")
+
+    fun amountOf(line: String): Amount? {
+        val m = AMOUNT.find(Parse.cleanName(line)) ?: return null
+        val raw = m.groupValues[1]
+        var q = when (raw) { "½" -> 0.5; "¼" -> 0.25; "¾" -> 0.75; else -> raw.replace(",", ".").toDoubleOrNull() ?: return null }
+        var u = m.groupValues[2].lowercase()
+        when (u) {
+            "kg" -> { q *= 1000; u = "g" }; "gram" -> u = "g"; "hg" -> { q *= 100; u = "g" }
+            "l", "liter" -> { q *= 10; u = "dl" }; "cl" -> { q /= 10; u = "dl" }; "ml" -> { q /= 100; u = "dl" }
+            "", "pakke", "pakker" -> u = if (u.isEmpty()) "stk" else "pk"
+            "bokser" -> u = "boks"; "poser" -> u = "pose"
+        }
+        return Amount(q, u)
+    }
+
+    private fun fmt(a: Amount): String {
+        val n = if (a.qty % 1.0 == 0.0) a.qty.toLong().toString() else "%.1f".format(java.util.Locale.ROOT, a.qty).removeSuffix(".0")
+        return when {
+            a.unit == "g" && a.qty >= 1000 -> "%.1f".format(java.util.Locale.ROOT, a.qty / 1000).removeSuffix(".0") + " kg"
+            a.unit == "dl" && a.qty >= 10 -> "%.1f".format(java.util.Locale.ROOT, a.qty / 10).removeSuffix(".0") + " l"
+            a.unit == "stk" -> n
+            else -> "$n ${a.unit}"
+        }
+    }
+
+    /**
+     * One shopping list for the whole week: the same ingredient from several dishes becomes one line
+     * with the amounts added up ("Løk (3)", "Rømme (6 dl)"). Small amounts of spoons are left out.
+     */
+    fun mergeWeek(dishes: List<Dish>): List<String> {
+        data class Acc(val name: String, val amounts: MutableMap<String, Double>, var dishes: Int)
+        val out = ArrayList<Acc>()
+        dishes.forEach { d ->
+            d.all.ifEmpty { d.buy }.forEach { line ->
+                val name = ingredientName(line) ?: return@forEach
+                val a = amountOf(line)
+                val acc = out.firstOrNull { same(it.name, name) } ?: Acc(name, LinkedHashMap(), 0).also { out += it }
+                acc.dishes++
+                if (a != null && a.unit !in setOf("ss", "ts")) acc.amounts[a.unit] = (acc.amounts[a.unit] ?: 0.0) + a.qty
+            }
+        }
+        return out.map { acc ->
+            val amt = acc.amounts.entries.joinToString(" + ") { fmt(Amount(it.value, it.key)) }
+            if (amt.isNotBlank()) "${acc.name} ($amt)" else acc.name
+        }
+    }
+
     /** Asked when you pick a dish: just its recipe, short. */
     fun recipeQuestion(d: Dish): String = if (Lang.no)
         "Gi meg oppskriften på «${d.name}»: ingredienser med mengder, og fremgangsmåte i korte, nummererte steg. " +

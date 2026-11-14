@@ -158,7 +158,7 @@ fun DinnerScreen() {
             ""
         ChatGptBridge.reset()
         ChatUi.pickedDish.clear(); ChatUi.madeLists.clear(); ChatUi.pendingList = null
-        ChatUi.budget = null
+        ChatUi.budget = null; ChatUi.week = null
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
     }
@@ -182,7 +182,31 @@ fun DinnerScreen() {
             (if (deals.isNotEmpty()) tr("\n(with ${deals.size} deals near you this week)", "\n(med ${deals.size} tilbud nær deg denne uken)") else "")
         ChatGptBridge.reset()
         ChatUi.pickedDish.clear(); ChatUi.madeLists.clear(); ChatUi.pendingList = null
-        ChatUi.budget = budget.toInt()
+        ChatUi.budget = budget.toInt(); ChatUi.week = null
+        (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
+        ChatUi.open = true
+    }
+
+    var days by rememberSaveable { mutableIntStateOf(5) }
+    var weekBudget by rememberSaveable { mutableFloatStateOf(800f) }
+    fun askWeek() = scope.launch {
+        if (Flyers.cachedAsync(ctx).isEmpty()) {
+            preparing = true
+            runCatching {
+                val loc = currentLocation(ctx)
+                Flyers.near(ctx, loc?.first ?: Deals.FALLBACK_LAT, loc?.second ?: Deals.FALLBACK_LNG,
+                    com.handleliste.app.data.Settings.radiusKm(ctx) * 1000)
+            }
+            preparing = false
+        }
+        val deals = withContext(Dispatchers.Default) { Prices.dinnerDeals(ctx, 60).map { Prices.dealLine(it) } }
+        val prompt = Dinner.weekPrompt(days, weekBudget.toInt(), servings, ChatUi.items().map { it.name }, extra, deals, wishes.joinToString(", "), DinnerPrefs.recent(ctx))
+        val shown = tr("Plan $days dinners for ${weekBudget.toInt()} kr · $servings ${if (servings == 1) "person" else "people"}",
+            "Lag ukesmeny: $days middager for ${weekBudget.toInt()} kr · $servings ${if (servings == 1) "person" else "personer"}") +
+            (if (wishes.isNotEmpty()) "\n" + wishes.joinToString(" · ") else "")
+        ChatGptBridge.reset()
+        ChatUi.pickedDish.clear(); ChatUi.madeLists.clear(); ChatUi.pendingList = null
+        ChatUi.budget = null; ChatUi.week = days
         (ctx as? Activity)?.let { ChatGptBridge.ask(it, prompt, shown, prompt) }
         ChatUi.open = true
     }
@@ -304,6 +328,36 @@ fun DinnerScreen() {
                 }
             }
         }
+        Spacer(Modifier.height(16.dp))
+        // A week of dinners with one shopping list where shared ingredients are added up.
+        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📅", fontSize = 20.sp); Spacer(Modifier.width(8.dp))
+                    Text(tr("Week plan", "Ukesmeny"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Text(tr("Several dinners, one shopping list. Shared ingredients are added up, so nothing is bought twice.",
+                    "Flere middager, én handleliste. Felles ingredienser legges sammen, så ingenting kjøpes to ganger."),
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${weekBudget.toInt()} kr", fontSize = 26.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { if (days > 2) days-- }) { Text("−", fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                    Text(tr("$days days", "$days dager"), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    IconButton(onClick = { if (days < 7) days++ }) { Text("+", fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer) }
+                }
+                Slider(value = weekBudget, onValueChange = { weekBudget = (Math.round(it / 50f) * 50f) }, valueRange = 200f..3000f)
+                Text(tr("About ${(weekBudget / days).toInt()} kr per dinner · $servings ${if (servings == 1) "person" else "people"} (set above)",
+                    "Ca. ${(weekBudget / days).toInt()} kr per middag · $servings ${if (servings == 1) "person" else "personer"} (velges over)"),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = { askWeek() }, modifier = Modifier.fillMaxWidth(), enabled = !preparing) {
+                    Icon(Icons.Filled.Restaurant, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text(tr("Plan $days dinners", "Lag ukesmeny for $days dager"))
+                }
+            }
+        }
         if (turns.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             FilledTonalButton(onClick = { ChatUi.open = true }, modifier = Modifier.fillMaxWidth()) {
@@ -319,6 +373,7 @@ sealed class ChatEntry(val key: String) {
     class Price(i: Int, val extra: List<String>, val fromList: List<String>) : ChatEntry("p$i")
     class Add(i: Int, val items: List<String>) : ChatEntry("a$i")
     class Dishes(val turn: Int, val dishes: List<Dinner.Dish>, val answer: String) : ChatEntry("d$turn")
+    class Week(val turn: Int, val dishes: List<Dinner.Dish>) : ChatEntry("w$turn")
 }
 
 /** Lets screens ask the app to switch bottom tab (0 = List). */
@@ -346,6 +401,8 @@ object ChatUi {
     fun items() = chosen().flatMap { ListRepo.itemsOf(it) }.filter { !it.checked }
     /** Set when the chat is a budget dinner, so the price check can compare against it. */
     var budget by mutableStateOf<Int?>(null)
+    /** Set (to the number of days) when the chat is a week plan. */
+    var week by mutableStateOf<Int?>(null)
 }
 
 /** The app's own chat with ChatGPT: answers stream in, follow-ups stay in the same conversation. */
@@ -374,7 +431,9 @@ fun DinnerChat(onClose: () -> Unit) {
             if (hidden(i)) return@forEachIndexed
             add(ChatEntry.Msg(i, t.user, if (t.user) t.text else Dinner.display(t.text)))
             val dishes = if (t.user) emptyList() else Dinner.dishes(t.text)
-            if (!t.user && dishes.isNotEmpty() && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
+            if (!t.user && dishes.isNotEmpty() && ChatUi.week != null && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
+                add(ChatEntry.Week(i, dishes))
+            } else if (!t.user && dishes.isNotEmpty() && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
                 add(ChatEntry.Dishes(i, dishes, t.text))
             } else if (!t.user && (i != shown.lastIndex || status == ChatGptBridge.Status.DONE)) {
                 val missing = Dinner.missing(t.text)
@@ -438,6 +497,7 @@ fun DinnerChat(onClose: () -> Unit) {
                         is ChatEntry.Msg -> Bubble(e.text, mine = e.user)
                         is ChatEntry.Price -> PriceCheck(e.extra, e.fromList, ChatUi.budget)
                         is ChatEntry.Add -> AddMissing(e.items)
+                        is ChatEntry.Week -> WeekPlan(e.turn, e.dishes)
                         is ChatEntry.Dishes -> DishPicker(e.turn, e.dishes, listNames, e.answer,
                             latest = e.turn == entries.filterIsInstance<ChatEntry.Dishes>().lastOrNull()?.turn)
                     }
@@ -787,5 +847,56 @@ internal fun markdown(s: String): AnnotatedString = buildAnnotatedString {
         if (heading != null) { withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontSize = 17.sp)) { append(line.replace("**", "")) }; return@forEachIndexed }
         val parts = line.split("**")
         parts.forEachIndexed { j, p -> if (j % 2 == 1) withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(p) } else append(p) }
+    }
+}
+
+/** The week plan: a picture card per day, then one button that makes the whole week's shopping list. */
+@Composable
+private fun WeekPlan(turn: Int, dishes: List<Dinner.Dish>) {
+    val merged = remember(dishes) { Dinner.mergeWeek(dishes) }
+    val key = "week-$turn"
+    val made = key in ChatUi.madeLists
+    val clock = rememberSparkleClock()
+    val pop by animateFloatAsState(if (made) 1f else 0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow), label = "pop")
+    LaunchedEffect(made) { if (made && ChatUi.freshRecipe != null) { delay(900); ChatUi.open = false; AppNav.go(0) } }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            itemsIndexed(dishes) { j, d ->
+                Column {
+                    Text(Dinner.dayName(j), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+                    DishCard(d, selected = false) {}
+                }
+            }
+        }
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+            Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                Text(tr("Shopping list for the week · ${merged.size} items", "Handleliste for uken · ${merged.size} varer"), fontWeight = FontWeight.Bold)
+                Text(merged.joinToString(", "), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 6, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Button(
+            onClick = {
+                val plan = dishes.mapIndexed { j, d -> "**${Dinner.dayName(j)}:** ${d.name}" }.joinToString("\n") +
+                    "\n\n" + tr("Ingredients for the week:", "Ingredienser for uken:") + "\n" + merged.joinToString("\n") { "- $it" }
+                val week = java.util.Calendar.getInstance().get(java.util.Calendar.WEEK_OF_YEAR)
+                val id = ListRepo.newListFrom(tr("Week $week", "Uke $week"), merged, dishes.firstNotNullOfOrNull { ChatUi.dishPics[it.name] }, plan)
+                ChatUi.madeLists += key
+                ChatUi.freshRecipe = id
+            },
+            enabled = !made,
+            colors = ButtonDefaults.buttonColors(disabledContainerColor = MaterialTheme.colorScheme.primary, disabledContentColor = MaterialTheme.colorScheme.onPrimary),
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+                .graphicsLayer { val k = if (!made) pulseOf(clock.value) else 1f + pop * 0.04f * (1f - pop); scaleX = k; scaleY = k }
+                .then(if (!made) Modifier.sparkles({ clock.value }) else Modifier)
+                .clip(RoundedCornerShape(50))
+                .then(if (!made) Modifier.shimmer({ clock.value }, alpha = 0.4f) else Modifier)
+        ) {
+            Icon(if (made) Icons.Filled.Check else Icons.AutoMirrored.Filled.PlaylistAdd, null, Modifier.size(if (made) (18 + pop * 6).dp else 20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(if (made) tr("Added! Opening your list…", "Lagt til! Åpner listen …") else tr("Make the week's shopping list", "Lag handleliste for uken"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }

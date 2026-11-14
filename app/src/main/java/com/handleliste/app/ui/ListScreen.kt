@@ -1,5 +1,8 @@
 package com.handleliste.app.ui
 
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -133,6 +136,7 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
     var editing by remember { mutableStateOf<ShopList?>(null) }
     var creating by remember { mutableStateOf(false) }
     val enableWatch = rememberEnableWatch()
+    val scope = rememberCoroutineScope()
     val open = ListRepo.items.filter { !it.checked }
     val done = ListRepo.items.filter { it.checked }
     val suggestions = remember(History.version, ListRepo.open.size) { History.suggestions(ctx) }
@@ -189,8 +193,14 @@ fun ListScreen(onOpenDeals: () -> Unit, onDinner: () -> Unit, onSettings: () -> 
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { add() }),
                 trailingIcon = {
-                    IconButton(onClick = { add() }, enabled = text.isNotBlank()) {
-                        Icon(Icons.Filled.Add, tr("Add", "Legg til"))
+                    Row {
+                        // Scan a product's barcode at home when it runs out.
+                        if (text.isBlank()) IconButton(onClick = { scanBarcode(ctx, scope) }) {
+                            Icon(Icons.Filled.QrCodeScanner, tr("Scan barcode", "Skann strekkode"))
+                        }
+                        IconButton(onClick = { add() }, enabled = text.isNotBlank()) {
+                            Icon(Icons.Filled.Add, tr("Add", "Legg til"))
+                        }
                     }
                 }
             )
@@ -733,4 +743,31 @@ private fun CheapestStore() {
             }
         }
     }
+}
+
+/** Opens Google's barcode scanner, finds the product and puts it on the list shown, with its picture. */
+fun scanBarcode(ctx: android.content.Context, scope: kotlinx.coroutines.CoroutineScope) {
+    val opts = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+        .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13, com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8,
+            com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A, com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E)
+        .enableAutoZoom().build()
+    com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(ctx, opts).startScan()
+        .addOnSuccessListener { code ->
+            val ean = code.rawValue ?: return@addOnSuccessListener
+            scope.launch {
+                val p = runCatching { com.handleliste.app.data.Barcode.lookup(ean) }.getOrNull()
+                if (p == null) {
+                    android.widget.Toast.makeText(ctx, tr("Couldn't find that product ($ean). Type it in instead.",
+                        "Fant ikke varen ($ean). Skriv den inn i stedet."), android.widget.Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                val name = com.handleliste.app.data.Barcode.itemName(p)
+                val id = ListRepo.addWithPin(name, com.handleliste.app.data.Parse.pinFromProduct(p))
+                Undo.offer(tr("Added $name", "La til $name"), { ListRepo.remove(id) })
+            }
+        }
+        .addOnFailureListener {
+            android.widget.Toast.makeText(ctx, tr("The scanner isn't available on this phone.", "Skanneren er ikke tilgjengelig på denne telefonen."),
+                android.widget.Toast.LENGTH_LONG).show()
+        }
 }
