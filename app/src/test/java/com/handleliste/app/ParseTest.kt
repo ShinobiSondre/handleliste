@@ -253,7 +253,6 @@ RETT: Kyllingtaco | HANDLE: lomper, rømme | BRUKER: kylling, mais
     }
 
     @Test fun dishListHasEveryIngredient() {
-        val D = com.handleliste.app.data.Dinner
         val d = D.dishes("RETT: Tacogryte | HANDLE: rømme | BRUKER: kjøttdeig, tacochips | ALT: kjøttdeig, tacokrydder, tacochips, mais, rømme, revet ost | BILDE: taco casserole").single()
         val list = listOf("Kjøttdeig", "Taco chips", "Melk")
         assertEquals(listOf("Kjøttdeig", "Taco chips"), D.usesFromList(d, list))
@@ -264,7 +263,6 @@ RETT: Kyllingtaco | HANDLE: lomper, rømme | BRUKER: kylling, mais
     }
 
     @Test fun recipePerDish() {
-        val D = com.handleliste.app.data.Dinner
         val a = """Her er tre forslag:
 
 ### 1. Tacogryte
@@ -313,7 +311,6 @@ RETT: Pestopasta | HANDLE: ingenting | BRUKER: pasta, pesto | ALT: pasta, pesto 
     }
 
     @Test fun ingredientsFromRecipe() {
-        val D = com.handleliste.app.data.Dinner
         val r = """Tacogryte
 
 Tid: 25 minutter
@@ -348,7 +345,6 @@ Fremgangsmåte
 
     @Test fun noMarkdownInNames() {
         assertEquals(listOf("Taco", "Ost", "Mais"), Parse.splitItems("## Taco, **ost**, • mais"))
-        val D = com.handleliste.app.data.Dinner
         assertEquals("Tacogryte", D.dishes("RETT: ## Tacogryte | HANDLE: ### rømme | BRUKER: ingenting").single().name)
         assertEquals(listOf("Rømme"), D.dishes("RETT: ## Tacogryte | HANDLE: ### rømme | BRUKER: ingenting").single().buy.map { it.replaceFirstChar { c -> c.uppercase() } })
         val r = "### Ingredienser\n• 400 g kjøttdeig\n### Til sausen\n• 2 dl rømme\n### Fremgangsmåte\n1. Stek."
@@ -356,7 +352,6 @@ Fremgangsmåte
     }
 
     @Test fun realIngredientsAndProducts() {
-        val D = com.handleliste.app.data.Dinner
         assertEquals("Chilipulver", D.ingredientName("Litt chilipulver eller hvitløkspulver"))
         assertEquals(null, D.ingredientName("Salt og pepper"))
         assertEquals("Spisskål", D.ingredientName("1/2 spisskål, strimlet"))
@@ -416,10 +411,9 @@ Fremgangsmåte
     }
 
     @Test fun weekMerge() {
-        val D = com.handleliste.app.data.Dinner
-        val a = D.Dish("Taco", emptyList(), emptyList(), "", listOf("400 g kjøttdeig", "1 stk løk", "3 dl rømme", "1 pk tortilla"))
-        val b = D.Dish("Pasta", emptyList(), emptyList(), "", listOf("400 g kjøttdeig", "2 løk", "500 g spaghetti", "2 ss tomatpuré"))
-        val m = D.mergeWeek(listOf(a, b))
+        val a = com.handleliste.app.data.Dinner.Dish("Taco", emptyList(), emptyList(), "", listOf("400 g kjøttdeig", "1 stk løk", "3 dl rømme", "1 pk tortilla"))
+        val b = com.handleliste.app.data.Dinner.Dish("Pasta", emptyList(), emptyList(), "", listOf("400 g kjøttdeig", "2 løk", "500 g spaghetti", "2 ss tomatpuré"))
+        val m = com.handleliste.app.data.Dinner.mergeWeek(listOf(a, b))
         assertTrue(m.toString(), "Kjøttdeig (800 g)" in m)
         assertTrue(m.toString(), "Løk (3)" in m)
         assertTrue(m.toString(), "Rømme (3 dl)" in m)
