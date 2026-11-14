@@ -73,6 +73,9 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Barcode scanner from Google Play services: no camera permission needed, the scan UI is Google's.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // Home screen widget
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.glance:glance-material3:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

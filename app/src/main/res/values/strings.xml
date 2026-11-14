@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Handleliste</string>
+    <string name="widget_description">Handlelisten din på hjemskjermen. Trykk på en vare for å krysse den av.</string>
 </resources>

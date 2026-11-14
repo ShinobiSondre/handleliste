@@ -84,6 +84,7 @@ object ListRepo {
         }
         val pins = JSONObject(); lastPins.forEach { (k, v) -> pins.put(k, pinJson(v)) }
         prefs().edit().putString("lists", JSONObject().put("lists", arr).put("current", currentId).put("pins", pins).toString()).apply()
+        com.handleliste.app.widget.ListWidget.refresh(app)
     }
 
     /** Your last pick per item name, so "Pesto" comes back as your pesto next week. */
