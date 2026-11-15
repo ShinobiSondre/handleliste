@@ -40,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.FilterChip
+import com.handleliste.app.data.ListRepo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -146,6 +148,17 @@ fun SettingsScreen() {
                             runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                                 android.net.Uri.parse("package:" + ctx.packageName))) }
                         }) { Text(tr("Allow full screen", "Tillat fullskjerm")) }
+                    }
+                }
+                // Which list's deals the in-store screen shows first.
+                if (ListRepo.lists.size > 1) {
+                    var only by remember { mutableStateOf(Settings.splashList(ctx)) }
+                    Text(tr("In the store, show deals from", "I butikken, vis tilbud fra"), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                        item { FilterChip(selected = only.isEmpty(), onClick = { only = ""; Settings.setSplashList(ctx, "") }, label = { Text(tr("All lists", "Alle lister")) }) }
+                        items(ListRepo.lists.size) { i -> val l = ListRepo.lists[i]
+                            FilterChip(selected = only == l.id, onClick = { only = l.id; Settings.setSplashList(ctx, l.id) }, label = { Text(l.name) })
+                        }
                     }
                 }
                 OutlinedButton(onClick = { StoreAlert.show(ctx, "KIWI (test)") }) {

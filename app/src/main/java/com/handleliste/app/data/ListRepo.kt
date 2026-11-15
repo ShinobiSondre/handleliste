@@ -294,6 +294,10 @@ object Settings {
     fun priceStore(ctx: Context) = p(ctx).getString("priceStore", "").orEmpty()
     fun setPriceStore(ctx: Context, store: String) = p(ctx).edit().putString("priceStore", store).apply()
 
+    /** Which list the in-store deals splash shows ("" = all lists combined). */
+    fun splashList(ctx: Context) = p(ctx).getString("splashList", "").orEmpty()
+    fun setSplashList(ctx: Context, id: String) = p(ctx).edit().putString("splashList", id).apply()
+
     /** Sort the list by store section (on by default). */
     fun byAisle(ctx: Context) = p(ctx).getBoolean("byAisle", true)
     fun setByAisle(ctx: Context, on: Boolean) = p(ctx).edit().putBoolean("byAisle", on).apply()

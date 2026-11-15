@@ -59,8 +59,12 @@ object StoreAlert {
         val open = ListRepo.open
         if (open.isEmpty()) return
         channels(ctx)
-        val deals = Deals.atStore(store).map { it.first }.distinct()
-        val title = tr("You're at $store", "Du er på $store")
+        // Deals from the list chosen for the store pop-up (or all lists).
+        val only = com.handleliste.app.data.Settings.splashList(ctx).takeIf { id -> ListRepo.lists.any { it.id == id } }
+        val onlyNames = only?.let { id -> ListRepo.itemsOf(id).map { it.name }.toSet() }
+        val deals = Deals.atStore(store).map { it.first }.filter { onlyNames == null || it in onlyNames }.distinct()
+        val title = if (deals.isNotEmpty()) tr("🏷️ ${deals.size} deals for you at $store", "🏷️ ${deals.size} tilbud til deg hos $store")
+            else tr("You're at $store", "Du er på $store")
         val summary = tr("${open.size} things on your list", "${open.size} ting på listen") +
             if (deals.isNotEmpty()) tr(" · ${deals.size} on sale here", " · ${deals.size} på tilbud her") else ""
         val style = NotificationCompat.InboxStyle().setBigContentTitle(title).setSummaryText(summary)
