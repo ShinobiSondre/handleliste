@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -162,7 +164,25 @@ fun SettingsScreen() {
                     }
                 }
                 OutlinedButton(onClick = { StoreAlert.show(ctx, "KIWI (test)") }) {
-                    Text(tr("Try it: pretend I'm in a store", "Prøv: lat som jeg er i en butikk"))
+                    Text(tr("Test the notification", "Test varselet"))
+                }
+            }
+        }
+
+        // See the in-store screen for any store, with this week's real deals, without going there.
+        Section(tr("Preview the store screen", "Forhåndsvis butikkskjermen")) {
+            val withDeals = com.handleliste.app.data.Deals.bestStores()
+            val stores = withDeals.ifEmpty { listOf("KIWI", "REMA 1000", "MENY", "Coop Extra", "SPAR").map { it to 0 } }
+            Text(tr("Tap a store to see exactly what pops up when you walk in.", "Trykk på en butikk for å se akkurat det som dukker opp når du går inn."),
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                items(stores.size) { i ->
+                    val (st, n) = stores[i]
+                    Surface(onClick = { StoreAlert.preview(st) }, shape = RoundedCornerShape(50),
+                        color = storeColors(st).first()) {
+                        Text(st + if (n > 0) " · 🏷️ $n" else "", Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
                 }
             }
         }

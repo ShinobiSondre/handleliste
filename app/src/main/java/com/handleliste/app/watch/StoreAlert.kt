@@ -31,6 +31,11 @@ object StoreAlert {
     var inStore by mutableStateOf<String?>(null)
     /** Set when the in-store screen should be on top. */
     var splash by mutableStateOf<String?>(null)
+    /** True while the in-store screen is just a preview (opened from Settings or Deals). */
+    var previewing by mutableStateOf(false)
+
+    /** Opens the in-store screen for [store] right away, without a notification, to see what it'll look like. */
+    fun preview(store: String) { previewing = true; splash = store }
 
     fun channels(ctx: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

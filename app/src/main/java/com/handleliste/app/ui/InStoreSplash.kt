@@ -86,6 +86,7 @@ fun InStoreSplash() {
     val ctx = LocalContext.current
     val store = StoreAlert.splash
     LaunchedEffect(Unit) { InStoreUi.huge = com.handleliste.app.data.Settings.bigText(ctx) }
+    LaunchedEffect(store) { if (store == null) StoreAlert.previewing = false }
     // Fresh deals for this trip, if the last check is old.
     LaunchedEffect(store) {
         if (store != null && ListRepo.open.isNotEmpty() && (Deals.results.isEmpty() || System.currentTimeMillis() - Deals.fetchedAt > 6 * 3600_000L)) {
@@ -117,7 +118,8 @@ fun InStoreSplash() {
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(tr("You're in the store", "Du er i butikken"), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (StoreAlert.previewing) tr("👀 Preview · this is what you'll see in the store", "👀 Forhåndsvisning · slik ser det ut i butikken")
+                            else tr("You're in the store", "Du er i butikken"), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         Text(name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             if (open.isEmpty()) tr("All done. Nice!", "Alt er handlet. Bra!")

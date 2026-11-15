@@ -242,6 +242,13 @@ fun DealsScreen() {
             } else {
                 val here = results.flatMap { d -> d.offers.filter { it.store == tab }.map { d.item to it } }
                 item {
+                    Surface(onClick = { com.handleliste.app.watch.StoreAlert.preview(tab) }, shape = RoundedCornerShape(14.dp),
+                        color = storeColors(tab).first(), modifier = Modifier.fillMaxWidth()) {
+                        Text(tr("📱 See it like in the store", "📱 Se det som i butikken"), Modifier.padding(14.dp), color = Color.White,
+                            fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
+                item {
                     Text(tr("${here.map { it.first }.distinct().size} of your items on sale at $tab", "${here.map { it.first }.distinct().size} av varene dine på tilbud hos $tab"),
                         style = MaterialTheme.typography.titleMedium)
                 }
