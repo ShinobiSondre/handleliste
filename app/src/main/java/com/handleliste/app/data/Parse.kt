@@ -227,12 +227,17 @@ object Parse {
             val head = o.heading.lowercase()
             val desc = o.description.lowercase()
             val headWords = head.split(split)
+            // "taco chips" → "Tacochips": the whole term as one word.
+            if (words.size > 1) {
+                val joined = words.joinToString("")
+                if (headWords.any { it == joined || endsAs(it, joined) || startsAsForm(it, joined) }) return 6 * words.size
+            }
             var total = 0
             for ((i, w) in words.withIndex()) {
                 total += when {
                     whole[i].containsMatchIn(head) -> 6
-                    headWords.any { endsAs(it, w) } -> 4 // lettMELK, gårdsEGG (not pålEGG)
-                    containsReal(head, w) -> 2 // sjokoMELKdrikk
+                    headWords.any { endsAs(it, w) } -> 4 // lettMELK, gårdsEGG (not pålEGG, not rucCOLA)
+                    headWords.any { startsAsForm(it, w) } -> 3 // KYLLINGfilet, TOMATer
                     containsReal(desc, w) -> 1
                     anyWord -> 0
                     else -> return 0 // every word must be there
@@ -335,12 +340,38 @@ object Parse {
     /** "pålegg", "innlegg", "tillegg" end in "egg" but have nothing to do with eggs. */
     private fun fakeEnd(word: String, w: String) = w == "egg" && word.endsWith("legg")
 
-    /** [word] ends in [w] as a real compound ("gårdsegg", "lettmelk"), not by accident ("pålegg"). */
-    fun endsAs(word: String, w: String) = word.endsWith(w) && !fakeEnd(word, w)
+    /** Short word starts that really make a compound: HELmelk, RØDløk, VÅRløk, SØTpotet … */
+    private val SHORT_PREFIX = setOf("hel", "rød", "vår", "søt", "fet", "mør", "grov", "fin", "ny", "rå", "øko", "sur", "gul", "hvit", "sort",
+        "små", "mild", "ekte", "is", "kald", "varm", "røkt", "tørr", "vill", "mini", "maxi", "jul", "påske", "sukker", "zero", "max", "lett")
 
-    /** [text] contains [w] somewhere other than inside "-legg" words. */
+    /** What can follow the item in a compound and still be the item: KYLLINGfilet, LAKSEfilet, TOMATer. */
+    private val FORMS = setOf("filet", "fileter", "lår", "lårfilet", "bryst", "vinger", "deig", "skiver", "biter", "strimler", "stek",
+        "kotelett", "koteletter", "loins", "porsjoner", "bein", "kjøtt", "kuber", "terninger", "korn")
+    private val PLURAL = setOf("r", "er", "e", "ene", "en", "s", "a", "ar")
+
+    /**
+     * [word] ends in [w] as a real compound ("gårdsegg", "lettmelk", "rødløk"), not by accident:
+     * "ruccola" is not cola and "pålegg" is not egg. The part before must be a real word start.
+     */
+    fun endsAs(word: String, w: String): Boolean {
+        if (word == w) return true
+        if (fakeEnd(word, w)) return false
+        // Also in plural: cherryTOMATer, grillPØLSEr.
+        val end = listOf("") .plus(PLURAL).firstOrNull { word.endsWith(w + it) } ?: return false
+        val pre = word.dropLast(w.length + end.length).trimEnd('-')
+        return pre.isNotEmpty() && (pre.length >= 4 || pre in SHORT_PREFIX)
+    }
+
+    /** [word] is [w] in another form: plural ("tomater") or a cut ("kyllingfilet", "laksefilet"). */
+    fun startsAsForm(word: String, w: String): Boolean {
+        if (!word.startsWith(w) || word == w) return word == w
+        val rest = word.drop(w.length).trimStart('-')
+        return rest in PLURAL || rest in FORMS || rest.removePrefix("e") in FORMS || rest.removePrefix("s") in FORMS
+    }
+
+    /** The item [w] really is one of the words in [text] (whole word, real compound or another form of it). */
     fun containsReal(text: String, w: String): Boolean =
-        if (w == "egg") Regex("(?<!l)egg").containsMatchIn(text) else text.contains(w)
+        text.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).any { it == w || endsAs(it, w) || startsAsForm(it, w) }
 
     fun rankProducts(query: String, products: List<Product>): List<Product> {
         val words = query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 2 }

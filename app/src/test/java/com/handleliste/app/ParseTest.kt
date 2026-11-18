@@ -448,4 +448,19 @@ Fremgangsmåte
         assertEquals(listOf("Melk", "Brød", "Egg"), Parse.sharedList("melk, brød og egg").second)
         assertEquals(listOf("Melk", "Brød"), Parse.sharedList("- melk\n- brød").second)
     }
+
+    @Test fun notTooBroad() {
+        val all = listOf(offer("Coca-Cola 1,5 l"), offer("Pepsi Max Cola"), offer("Ruccola", d = "Ruccola, 65 g"), offer("Babyruccola"),
+            offer("Cherrytomater"), offer("Kyllingfilet"), offer("Kyllingkraft"), offer("Duopålegg"), offer("Gårdsegg"), offer("Tacochips"),
+            offer("Helmelk"), offer("Melkesjokolade"), offer("Rødløk"), offer("Pastasaus"))
+        fun m(t: String) = Parse.matchOffers(t, all, limit = 20).map { it.heading }.toSet()
+        assertEquals(setOf("Coca-Cola 1,5 l", "Pepsi Max Cola"), m("cola"))
+        assertEquals(setOf("Cherrytomater"), m("tomat"))
+        assertEquals(setOf("Kyllingfilet"), m("kylling"))
+        assertEquals(setOf("Gårdsegg"), m("egg"))
+        assertEquals(setOf("Tacochips"), m("taco chips"))
+        assertEquals(setOf("Helmelk"), m("melk"))
+        assertEquals(setOf("Rødløk"), m("løk"))
+        assertTrue(m("pasta").isEmpty())
+    }
 }
