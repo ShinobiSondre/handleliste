@@ -348,6 +348,8 @@ object Parse {
     private val FORMS = setOf("filet", "fileter", "lår", "lårfilet", "bryst", "vinger", "deig", "skiver", "biter", "strimler", "stek",
         "kotelett", "koteletter", "loins", "porsjoner", "bein", "kjøtt", "kuber", "terninger", "korn")
     private val PLURAL = setOf("r", "er", "e", "ene", "en", "s", "a", "ar")
+    private val ACCIDENTAL = setOf("ruccola", "rucola", "pålegg", "innlegg", "kakao", "sjalott", "paprika", "tapas", "nachos", "kokos",
+        "aspargesbønner", "pistasj", "ananas", "potetmos", "solsikke", "toast", "lakris", "melis", "basilikum", "cashew")
 
     /**
      * [word] ends in [w] as a real compound ("gårdsegg", "lettmelk", "rødløk"), not by accident:
@@ -356,6 +358,8 @@ object Parse {
     fun endsAs(word: String, w: String): Boolean {
         if (word == w) return true
         if (fakeEnd(word, w)) return false
+        // Words that only end the same by accident: (baby)ruccola is not cola, pålegg is not egg.
+        if (ACCIDENTAL.any { a -> a != w && a.endsWith(w) && word.contains(a) }) return false
         // Also in plural: cherryTOMATer, grillPØLSEr.
         val end = listOf("") .plus(PLURAL).firstOrNull { word.endsWith(w + it) } ?: return false
         val pre = word.dropLast(w.length + end.length).trimEnd('-')
